@@ -33,6 +33,29 @@ export function BillingPanel() {
     return () => { void supabase.removeChannel(channel); };
   }, []);
 
+  const pending = invoices.find((invoice) => invoice.status === "PENDING");
+
+  useEffect(() => {
+    if (!subscription?.billingEnabled || !subscription.currentPeriodEndsAt) return;
+    let cancelled = false;
+    let timer = 0;
+    const schedule = () => {
+      const dueIn = new Date(subscription.currentPeriodEndsAt as string).getTime() - Date.now();
+      const delay = pending ? 10_000 : Math.min(Math.max(dueIn, 1_000), 60 * 60 * 1_000);
+      timer = window.setTimeout(async () => {
+        try {
+          await refreshSubscriptionCharge();
+          await refresh();
+        } catch (error) {
+          setMessage((error as Error).message);
+        }
+        if (!cancelled) schedule();
+      }, delay);
+    };
+    schedule();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [subscription?.billingEnabled, subscription?.currentPeriodEndsAt, Boolean(pending)]);
+
   const run = async (action: () => Promise<unknown>, success: string) => {
     setWorking(true); setMessage("");
     try {
@@ -45,7 +68,6 @@ export function BillingPanel() {
   };
 
   if (loading || !subscription) return <div className="auth-loading"><span>Carregando mensalidade...</span></div>;
-  const pending = invoices.find((invoice) => invoice.status === "PENDING");
   const visibleInvoices = invoices.slice(0, visibleInvoiceCount);
   const hasMoreInvoices = visibleInvoiceCount < invoices.length;
 

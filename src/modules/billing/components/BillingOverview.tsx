@@ -36,23 +36,25 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   const hasMoreInvoices = visibleInvoiceCount < invoices.length;
 
   useEffect(() => {
-    if (!pending) return;
-    let checking = false;
-    const reconcile = async () => {
-      if (checking) return;
-      checking = true;
-      try {
-        await refreshSubscriptionCharge();
-        await refresh();
-      } catch {
-        // O próximo ciclo tenta novamente; a tela continua disponível para pagamento.
-      } finally {
-        checking = false;
-      }
+    if (!subscription?.billingEnabled || !subscription.currentPeriodEndsAt) return;
+    let cancelled = false;
+    let timer = 0;
+    const schedule = () => {
+      const dueIn = new Date(subscription.currentPeriodEndsAt as string).getTime() - Date.now();
+      const delay = pending ? 10_000 : Math.min(Math.max(dueIn, 1_000), 60 * 60 * 1_000);
+      timer = window.setTimeout(async () => {
+        try {
+          await refreshSubscriptionCharge();
+          await refresh();
+        } catch {
+          // O próximo ciclo tenta novamente; a tela continua disponível para pagamento.
+        }
+        if (!cancelled) schedule();
+      }, delay);
     };
-    const interval = window.setInterval(() => void reconcile(), 10_000);
-    return () => window.clearInterval(interval);
-  }, [Boolean(pending)]);
+    schedule();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [subscription?.billingEnabled, subscription?.currentPeriodEndsAt, Boolean(pending)]);
 
   if (loading && !subscription) return <div className="billing-inline-loading">Carregando mensalidade...</div>;
   if (!subscription) return <div className="billing-message">{message || "Não foi possível carregar a mensalidade."}</div>;

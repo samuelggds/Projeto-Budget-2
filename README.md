@@ -115,3 +115,5 @@ Depois de executar `billing-realtime-migration.sql`, as telas recebem alteraçõ
 da mensalidade pelo Supabase Realtime. Enquanto existir uma fatura pendente, a
 tela também faz uma reconciliação automática a cada 10 segundos como garantia
 caso a notificação do Mercado Pago demore.
+Ao chegar ao vencimento, as telas de mensalidade chamam automaticamente a rotina
+de cobrança e exibem o novo QR Code sem exigir o botão Atualizar cobrança.
