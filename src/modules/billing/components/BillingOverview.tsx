@@ -10,6 +10,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [visibleInvoiceCount, setVisibleInvoiceCount] = useState(5);
 
   const refresh = async () => {
     setLoading(true);
@@ -22,6 +23,8 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
 
   useEffect(() => { void refresh(); }, []);
   const pending = invoices.find((invoice) => invoice.status === "PENDING");
+  const visibleInvoices = invoices.slice(0, visibleInvoiceCount);
+  const hasMoreInvoices = visibleInvoiceCount < invoices.length;
 
   if (loading && !subscription) return <div className="billing-inline-loading">Carregando mensalidade...</div>;
   if (!subscription) return <div className="billing-message">{message || "Não foi possível carregar a mensalidade."}</div>;
@@ -43,7 +46,6 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
         {!pending && <p>A cobrança Pix aparecerá aqui automaticamente quando o ciclo mensal vencer.</p>}
       </article>
     </section>
-    <section className="card billing-history"><div className="registry-title"><div><h2>Faturas da mensalidade</h2><p>Pagas, pendentes, vencidas ou canceladas</p></div></div><div className="billing-table"><div className="billing-row head"><span>Referência</span><span>Valor</span><span>Vencimento</span><span>Status</span><span>Pagamento</span></div>{invoices.map((invoice) => <div className="billing-row" key={invoice.id}><strong>{invoice.externalReference}</strong><span>{money(invoice.amount)}</span><span>{date(invoice.dueAt)}</span><em>{invoice.status}</em><span>{date(invoice.paidAt)}</span></div>)}{!invoices.length && <div className="empty-history">Nenhuma fatura gerada até o momento.</div>}</div></section>
+    <section className="card billing-history"><div className="registry-title"><div><h2>Faturas da mensalidade</h2><p>Exibindo {Math.min(visibleInvoiceCount, invoices.length)} de {invoices.length} faturas</p></div></div><div className="billing-table"><div className="billing-row head"><span>Referência</span><span>Valor</span><span>Vencimento</span><span>Status</span><span>Pagamento</span></div>{visibleInvoices.map((invoice) => <div className="billing-row" key={invoice.id}><strong>{invoice.externalReference}</strong><span>{money(invoice.amount)}</span><span>{date(invoice.dueAt)}</span><em>{invoice.status}</em><span>{date(invoice.paidAt)}</span></div>)}{!invoices.length && <div className="empty-history">Nenhuma fatura gerada até o momento.</div>}</div>{invoices.length > 5 && <div className="billing-pagination">{hasMoreInvoices && <button className="button soft" type="button" onClick={() => setVisibleInvoiceCount((count) => Math.min(count + 5, invoices.length))}>Carregar mais 5</button>}{visibleInvoiceCount > 5 && <button className="button ghost" type="button" onClick={() => setVisibleInvoiceCount(5)}>Voltar para 5</button>}</div>}</section>
   </div>;
 }
-

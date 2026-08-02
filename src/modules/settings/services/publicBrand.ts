@@ -19,15 +19,18 @@ export function usePublicBrand() {
   const [brand, setBrand] = useState(DEFAULT_PUBLIC_BRAND);
 
   useEffect(() => {
+    document.title = DEFAULT_PUBLIC_BRAND.appName;
     supabase.rpc("get_public_brand").single().then(({ data }) => {
       if (!data) return;
       const row = data as Record<string, unknown>;
-      setBrand({
+      const loadedBrand = {
         companyName: String(row.company_name || DEFAULT_PUBLIC_BRAND.companyName),
         appName: String(row.app_name || DEFAULT_PUBLIC_BRAND.appName),
         segment: String(row.segment || DEFAULT_PUBLIC_BRAND.segment),
         logoDataUrl: String(row.logo_data_url || ""),
-      });
+      };
+      setBrand(loadedBrand);
+      document.title = loadedBrand.appName;
     });
   }, []);
 

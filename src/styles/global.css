@@ -1852,6 +1852,7 @@ textarea:focus {
 .pix-card p { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .billing-history { max-width: 1180px; margin: 18px auto 0; }
 .billing-table { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.billing-pagination { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .billing-row { min-width: 720px; display: grid; grid-template-columns: 1.5fr .8fr 1.2fr .8fr 1.2fr; gap: 12px; align-items: center; padding: 13px 15px; border-top: 1px solid var(--line); font-size: 11px; }
 .billing-row.head { border-top: 0; background: #f7f8fb; color: var(--muted); font-size: 9px; font-weight: 900; text-transform: uppercase; }
 .billing-row em { width: max-content; padding: 5px 8px; border-radius: 99px; background: #eef3ff; color: var(--blue); font-style: normal; font-weight: 900; }
