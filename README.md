@@ -1,35 +1,91 @@
 # MG Orçamentos
 
-Frontend React + TypeScript para clientes, catálogo de serviços, orçamentos e PDFs.
+Aplicação React + TypeScript com Supabase, orçamentos, clientes, serviços, estoque, PDF e mensalidade recorrente de R$ 250 via Pix Mercado Pago.
 
-## Executar
+## Executar o frontend
 
 ```bash
 npm install
 npm run dev
 ```
 
-Copie `.env.example` para `.env` e ajuste `VITE_API_URL` quando o backend estiver disponível.
+Copie `.env.example` para `.env` e preencha somente a URL e a chave pública do Supabase. Nunca coloque Access Token do Mercado Pago em variável `VITE_`.
 
-## Login seguro com uma única conta
+## Contas
 
-1. Crie um projeto no Supabase.
-2. Em Authentication > Users, crie manualmente o único usuário administrador.
-3. Em Authentication > Sign In / Providers, desative **Allow new users to sign up**. Assim, somente contas já existentes poderão entrar.
-4. Copie `.env.example` para `.env` e informe:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_PUBLISHABLE_KEY` (a chave pública/publishable, nunca `service_role`)
-   - `VITE_ADMIN_EMAIL` com o e-mail exato da conta única
-5. Cadastre a URL de produção nas configurações de URL do Supabase antes do deploy.
+- `ADMIN`: usa o sistema enquanto a mensalidade estiver válida.
+- `BILLING_ADMIN`: acessa somente o painel de mensalidade, ativação, desativação, Pix e histórico.
 
-O aplicativo não possui tela nem função de cadastro. A sessão é conferida com o servidor do Supabase, contas com outro e-mail são desconectadas e o botão de sair encerra somente a sessão do dispositivo atual.
+Não existe cadastro público. Crie os usuários em Authentication > Users e desative novos cadastros no provedor de e-mail.
 
-## Banco de dados
+## Ordem das migrations
 
-Clientes, serviços, orçamentos e itens são lidos e gravados diretamente no Supabase usando a sessão autenticada e as políticas RLS. O backend deve validar o fluxo `Enviado → Em andamento → Aprovado → Pago`. `Recusado` é uma saída separada a partir de `Enviado` ou `Em andamento`. Nunca aceite regressão de status.
+Execute uma vez no SQL Editor:
 
-Os PDFs continuam guardados no navegador via IndexedDB. Os registros e cálculos ficam sincronizados no Supabase; a sincronização dos próprios arquivos PDF exige configurar um bucket no Supabase Storage em uma etapa separada.
+1. `complete-database-setup.sql`
+2. `app-settings-migration.sql`
+3. `stock-parts-migration.sql`
+4. `mercado-pago-subscription-migration.sql`
+5. `mercado-pago-activation-migration.sql`
+6. `account-roles-migration.sql`
+7. `assign-account-roles.sql` (troque os placeholders somente no SQL Editor)
+8. `mercado-pago-recurring-migration.sql`
+9. `subscription-reactivation-reset.sql`
+10. `billing-automation-migration.sql`
+11. `subscription-access-enforcement.sql`
 
-## Split
+## Secrets das Edge Functions
 
-O frontend calcula 5% sobre orçamentos `Aprovado` ou `Pago`. O status `Pago` do orçamento não quita o split. O pagamento do split é controlado separadamente em `budgets.split_paid_at`: somente o botão manual da aba Splits abate o valor do total pendente. Execute `supabase/split-payment-migration.sql` uma vez no SQL Editor antes de usar essa versão.
+Cadastre em Supabase > Edge Functions > Secrets:
+
+```text
+MERCADO_PAGO_ACCESS_TOKEN_TEST=Access Token de teste
+MERCADO_PAGO_PAYER_EMAIL=e-mail do pagador
+MERCADO_PAGO_ENVIRONMENT=test
+CRON_SECRET=texto longo e aleatório
+MERCADO_PAGO_WEBHOOK_SECRET=preencher depois de configurar o webhook
+```
+
+Em produção, adicione `MERCADO_PAGO_ACCESS_TOKEN` e troque `MERCADO_PAGO_ENVIRONMENT` para `production`.
+
+## Publicar funções
+
+```bash
+npx supabase login
+npx supabase link --project-ref SEU_PROJECT_REF
+npx supabase functions deploy activate-subscription
+npx supabase functions deploy deactivate-subscription
+npx supabase functions deploy subscription-maintenance
+npx supabase functions deploy mercado-pago-webhook
+```
+
+## Webhook Mercado Pago
+
+Na aplicação Mercado Pago, abra Webhooks e cadastre:
+
+```text
+https://SEU_PROJECT_REF.supabase.co/functions/v1/mercado-pago-webhook
+```
+
+Selecione o evento `Order (Mercado Pago)`, salve e copie a assinatura secreta gerada para o Secret `MERCADO_PAGO_WEBHOOK_SECRET`.
+
+## Agendamento diário
+
+Em Supabase > Integrations > Cron, crie um Job diário para chamar a Edge Function `subscription-maintenance`. Inclua o header:
+
+```text
+x-cron-secret: o mesmo valor salvo em CRON_SECRET
+```
+
+Agendamento sugerido: `0 12 * * *` (todos os dias às 12:00 UTC, 09:00 no horário de Fortaleza).
+
+O botão Atualizar cobrança também chama a manutenção manualmente pela conta `BILLING_ADMIN`.
+
+## Regra da mensalidade
+
+- Ativar inicia um ciclo de um mês.
+- No vencimento, a rotina cria a cobrança Pix de R$ 250.
+- O sistema permanece disponível por mais cinco dias úteis.
+- Após a tolerância, o banco nega acesso aos dados e o frontend mostra o bloqueio.
+- O webhook confirma o pagamento e inicia o ciclo seguinte.
+- Desativar bloqueia imediatamente, cancela cobranças pendentes e interrompe novos ciclos.

@@ -46,7 +46,6 @@ create table if not exists public.budgets (
   payment text,
   notes text,
   pdf_url text,
-  split_paid_at timestamptz,
   stock_deducted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

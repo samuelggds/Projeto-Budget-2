@@ -16,12 +16,12 @@ import { createBudgetPdf, downloadPdfBlob } from "../../pdf/services/budgetPdf";
 import type { Client } from "../../clients/types/Client";
 import type { Service } from "../../services/types/Service";
 import { getAllowedNextStatuses } from "../services/budgetStatus";
-import { calculateAllSplits, calculateBudgetSplit, calculatePendingSplits, hasSplit, SPLIT_RATE } from "../services/budgetSplit";
 import { supabase } from "../../auth/services/supabase";
-import { approveBudgetAndDeductStock, deleteBudgetFromDatabase, deletePartFromDatabase, deleteServiceFromDatabase, loadDatabase, loadPartsFromDatabase, markSplitAsPaid, saveAppSettingsToDatabase, saveBudgetToDatabase, saveClientToDatabase, savePartToDatabase, saveServiceToDatabase } from "../../shared/services/supabaseDatabase";
+import { approveBudgetAndDeductStock, deleteBudgetFromDatabase, deletePartFromDatabase, deleteServiceFromDatabase, loadDatabase, loadPartsFromDatabase, saveAppSettingsToDatabase, saveBudgetToDatabase, saveClientToDatabase, savePartToDatabase, saveServiceToDatabase } from "../../shared/services/supabaseDatabase";
 import { SmoothSelect } from "../../shared/components/SmoothSelect";
 import { DEFAULT_APP_SETTINGS, type AppSettings } from "../../settings/types/AppSettings";
 import type { Part } from "../../stock/types/Part";
+import { BillingOverview } from "../../billing/components/BillingOverview";
 
 const withDefaultItemUnit = (current: Budget): Budget => ({
   ...current,
@@ -29,16 +29,14 @@ const withDefaultItemUnit = (current: Budget): Budget => ({
 });
 
 export function BudgetApplication() {
-  const [tab, setTab] = useState<"new" | "saved" | "clients" | "services" | "stock" | "splits" | "settings">("new");
+  const [tab, setTab] = useState<"new" | "saved" | "clients" | "services" | "stock" | "billing" | "settings">("new");
   const [preview, setPreview] = useState(false);
   const [budget, setBudget] = useState<Budget>(createInitialBudget);
   const [saved, setSaved] = useState<Budget[]>([]);
   const [search, setSearch] = useState("");
-  const [splitSearch, setSplitSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [periodFilter, setPeriodFilter] = useState("Todos");
   const [historyVisibleCount, setHistoryVisibleCount] = useState(10);
-  const [splitVisibleCount, setSplitVisibleCount] = useState(10);
   const [toast, setToast] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -58,26 +56,6 @@ export function BudgetApplication() {
     period: periodFilter,
   });
   const visibleBudgets = filtered.slice(0, historyVisibleCount);
-  const splitBudgets = saved.filter(hasSplit);
-  const normalizedSplitSearch = splitSearch.trim().toLocaleLowerCase("pt-BR");
-  const filteredSplitBudgets = splitBudgets.filter((item) => {
-    if (!normalizedSplitSearch) return true;
-
-    return [
-      item.number,
-      item.client.name,
-      item.client.document,
-      item.client.phone,
-      item.client.email,
-      item.status,
-    ].some((value) =>
-      String(value ?? "").toLocaleLowerCase("pt-BR").includes(normalizedSplitSearch),
-    );
-  });
-  const visibleSplitBudgets = filteredSplitBudgets.slice(0, splitVisibleCount);
-  const splitTotal = calculateAllSplits(saved);
-  const pendingSplitTotal = calculatePendingSplits(saved);
-  const paidSplitCount = splitBudgets.filter((item) => item.splitPaidAt).length;
 
   useEffect(() => {
     loadDatabase()
@@ -227,6 +205,21 @@ export function BudgetApplication() {
     notify(`${part.description} adicionada ao orçamento`);
   };
 
+  const addServiceToBudget = (service: Service) => {
+    setBudget((current) => {
+      const base = ["Aprovado", "Pago", "Recusado"].includes(current.status) ? createNextBudget(saved) : current;
+      const emptyOnly = base.items.length === 1 && !base.items[0].description.trim() && !base.items[0].serviceCode;
+      const serviceItem: Item = {
+        id: crypto.randomUUID(), serviceId: service.id, partId: "",
+        serviceCode: service.code, description: service.description,
+        quantity: 1, unit: "un.", unitPrice: service.unitPrice,
+      };
+      return { ...base, items: emptyOnly ? [serviceItem] : [...base.items, serviceItem] };
+    });
+    setPreview(false); setTab("new");
+    notify(`${service.description} adicionada ao orçamento`);
+  };
+
   const updateAppSetting = (field: keyof AppSettings, value: string) =>
     setAppSettings((current) => ({ ...current, [field]: value }));
 
@@ -274,16 +267,6 @@ export function BudgetApplication() {
     } catch (error) { notify(`Erro: ${(error as Error).message}`); }
   };
 
-  const paySplit = async (item: Budget) => {
-    if (item.splitPaidAt || !window.confirm(`Confirmar o pagamento do split de ${money(calculateBudgetSplit(item))} do orçamento ${item.number}?`)) return;
-    try {
-      const splitPaidAt = await markSplitAsPaid(item.id);
-      const updated = { ...item, splitPaidAt };
-      setSaved(saved.map((budgetItem) => budgetItem.id === item.id ? updated : budgetItem));
-      if (budget.id === item.id) setBudget(updated);
-      notify("Split marcado como pago e abatido do total");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
-  };
 
   const downloadServicesPdf = async () => {
     const element = document.getElementById("service-pdf");
@@ -406,8 +389,8 @@ export function BudgetApplication() {
           <button className={tab === "stock" ? "active" : ""} onClick={() => setTab("stock")}>
             <i>▣</i>Estoque
           </button>
-          <button className={tab === "splits" ? "active" : ""} onClick={() => setTab("splits")}>
-            <i>%</i>Splits
+          <button className={tab === "billing" ? "active" : ""} onClick={() => setTab("billing")}>
+            <i>R$</i>Mensalidade
           </button>
           <button
             className={tab === "settings" ? "active" : ""}
@@ -444,7 +427,7 @@ export function BudgetApplication() {
                 : tab === "clients" ? "Clientes"
                 : tab === "services" ? "Catálogo de serviços"
                 : tab === "stock" ? "Estoque de peças"
-                : tab === "splits" ? "Splits dos orçamentos"
+                : tab === "billing" ? "Mensalidade"
                 : "Configurações"}
             </h1>
             <p>
@@ -454,7 +437,7 @@ export function BudgetApplication() {
                 : tab === "clients" ? "Cadastre os clientes que serão usados nos orçamentos."
                 : tab === "services" ? "Cadastre códigos, descrições e valores para preenchimento automático."
                 : tab === "stock" ? "Cadastre peças para venda e adicione-as aos orçamentos."
-                : tab === "splits" ? "Acompanhe os 5% calculados sobre os orçamentos aprovados."
+                : tab === "billing" ? "Acompanhe vencimentos, pagamentos e faturas da assinatura."
                 : "Personalize os dados exibidos nos orçamentos."}
             </p>
           </div>
@@ -792,6 +775,7 @@ export function BudgetApplication() {
                 <thead>
                   <tr>
                     <th>#</th>
+                    <th>Tipo</th>
                     <th>Descrição</th>
                     <th>Qtd.</th>
                     <th>Un.</th>
@@ -803,6 +787,7 @@ export function BudgetApplication() {
                   {budget.items.map((item, index) => (
                     <tr key={item.id}>
                       <td>{String(index + 1).padStart(2, "0")}</td>
+                      <td><span className={`paper-item-type ${item.partId ? "part" : item.serviceId ? "service" : "manual"}`}>{item.partId ? "Peça" : item.serviceId ? "Mão de obra" : "Item manual"}</span></td>
                       <td>{item.description || "Item ou serviço"}</td>
                       <td>{item.quantity}</td>
                       <td>un.</td>
@@ -1036,7 +1021,7 @@ export function BudgetApplication() {
               <div id="service-pdf" className="services-paper">
                 <div className="services-paper-head"><img src={brandLogo} alt={`Logo de ${appSettings.companyName}`} /><div><h2>PLANILHA DE SERVIÇOS</h2><p>{appSettings.companyName} · Emitida em {new Date().toLocaleDateString("pt-BR")}</p></div></div>
                 <div className="service-head pdf-service-head"><span>Código</span><span>Serviço</span><span>Unidade</span><span>Valor</span><span className="service-actions-label">Ações</span></div>
-                {services.map((service) => <div className={`service-row pdf-service-row ${serviceDraft.id === service.id ? "is-being-edited" : ""}`} key={service.id}><code>{service.code}</code><div><strong>{service.description}</strong></div><span>{service.unit}</span><b>{money(service.unitPrice)}</b><div className="service-actions"><button onClick={() => editService(service)}>{serviceDraft.id === service.id ? "Editando..." : "Editar"}</button><button className="delete-service" onClick={() => removeService(service)}>Excluir</button></div></div>)}
+                {services.map((service) => <div className={`service-row pdf-service-row ${serviceDraft.id === service.id ? "is-being-edited" : ""}`} key={service.id}><code>{service.code}</code><div><strong>{service.description}</strong></div><span>{service.unit}</span><b>{money(service.unitPrice)}</b><div className="service-actions"><button className="add-to-budget" onClick={() => addServiceToBudget(service)}>＋ Orçamento</button><button onClick={() => editService(service)}>{serviceDraft.id === service.id ? "Editando..." : "Editar"}</button><button className="delete-service" onClick={() => removeService(service)}>Excluir</button></div></div>)}
                 <footer>{services.length} serviço(s) cadastrado(s)</footer>
               </div>
               {!services.length && <p className="registry-empty">Cadastre um serviço para usar o preenchimento automático.</p>}
@@ -1072,78 +1057,7 @@ export function BudgetApplication() {
           </section>
         )}
 
-        {tab === "splits" && (
-          <section className="card split-card">
-            <div className="split-summary">
-              <div><span>Percentual do split</span><strong>{SPLIT_RATE * 100}%</strong></div>
-              <div><span>Orçamentos com split</span><strong>{splitBudgets.length}</strong></div>
-              <div><span>Splits pagos</span><strong>{paidSplitCount}</strong></div>
-              <div className="split-total"><span>Total pendente dos splits</span><strong>{money(pendingSplitTotal)}</strong><small>Gerado: {money(splitTotal)}</small></div>
-            </div>
-            <div className="split-info">Orçamentos aprovados ou pagos geram split. O status Pago do orçamento é independente: somente o botão Marcar como pago quita o split e abate seu valor do total pendente.</div>
-            <div className="saved-toolbar split-toolbar">
-              <div className="search">
-                <span>⌕</span>
-                <input
-                  placeholder="Buscar cliente ou número..."
-                  value={splitSearch}
-                  onChange={(e) => {
-                    setSplitSearch(e.target.value);
-                    setSplitVisibleCount(10);
-                  }}
-                />
-              </div>
-              {splitSearch && (
-                <button
-                  className="clear-filter"
-                  onClick={() => {
-                    setSplitSearch("");
-                    setSplitVisibleCount(10);
-                  }}
-                >
-                  Limpar pesquisa
-                </button>
-              )}
-              <span>{filteredSplitBudgets.length} resultado(s)</span>
-            </div>
-            <div className="split-table">
-              <div className="split-head"><span>Orçamento</span><span>Cliente</span><span>Status</span><span>Valor aprovado</span><span>Split (5%)</span><span>Pagamento</span><span>Ação</span></div>
-              {visibleSplitBudgets.map((item) => (
-                <div className="split-row" key={item.id}>
-                  <strong>{item.number}</strong>
-                  <div><b>{item.client.name || "Cliente não informado"}</b><small>{new Date(`${item.issuedAt}T12:00:00`).toLocaleDateString("pt-BR")}</small></div>
-                  <em className={`status ${item.status.toLowerCase()}`}>{item.status}</em>
-                  <span>{money(calculateBudgetTotal(item))}</span>
-                  <strong>{money(calculateBudgetSplit(item))}</strong>
-                  <em className={`split-payment ${item.splitPaidAt ? "paid" : "pending"}`}>{item.splitPaidAt ? "Pago" : "Pendente"}</em>
-                  <div className="split-actions">
-                    {item.splitPaidAt ? (
-                      <small>Pago em {new Date(item.splitPaidAt).toLocaleDateString("pt-BR")}</small>
-                    ) : (
-                      <button className="button split-pay-button" onClick={() => paySplit(item)}>Marcar como pago</button>
-                    )}
-                    <button
-                      className="delete-action split-delete-button"
-                      disabled={!item.splitPaidAt}
-                      title={item.splitPaidAt ? "Excluir orçamento do Supabase" : "Marque o split como pago antes de excluir"}
-                      onClick={() => removeBudget(item)}
-                    >
-                      Excluir
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {!filteredSplitBudgets.length && <div className="empty-history"><strong>{splitSearch ? "Nenhum split encontrado" : "Nenhum split calculado"}</strong><span>{splitSearch ? "Tente pesquisar por outro cliente ou número de orçamento." : "O valor aparecerá quando um orçamento for aprovado."}</span></div>}
-            </div>
-            {filteredSplitBudgets.length > 10 && (
-              <div className="load-controls">
-                <span>Exibindo {Math.min(splitVisibleCount, filteredSplitBudgets.length)} de {filteredSplitBudgets.length}</span>
-                {splitVisibleCount > 10 && <button className="button ghost" onClick={() => setSplitVisibleCount(10)}>← Voltar para 10</button>}
-                {splitVisibleCount < filteredSplitBudgets.length && <button className="button primary" onClick={() => setSplitVisibleCount((count) => count + 5)}>Carregar mais 5</button>}
-              </div>
-            )}
-          </section>
-        )}
+        {tab === "billing" && <BillingOverview />}
 
         {tab === "settings" && (
           <section className="settings-layout">

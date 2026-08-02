@@ -1,0 +1,11 @@
+[functions.activate-subscription]
+verify_jwt = false
+
+[functions.deactivate-subscription]
+verify_jwt = false
+
+[functions.mercado-pago-webhook]
+verify_jwt = false
+
+[functions.subscription-maintenance]
+verify_jwt = false

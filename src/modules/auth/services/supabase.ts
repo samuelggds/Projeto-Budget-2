@@ -10,7 +10,3 @@ export const supabase = createClient(
   publishableKey || "configuracao-ausente",
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } },
 );
-
-export const authorizedEmail = (import.meta.env.VITE_ADMIN_EMAIL || "")
-  .trim()
-  .toLowerCase();

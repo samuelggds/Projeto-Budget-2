@@ -674,6 +674,18 @@ textarea {
   padding: 10px 9px;
   border-bottom: 1px solid #e5e8ee;
 }
+.paper-item-type {
+  display: inline-block;
+  padding: 4px 6px;
+  border-radius: 99px;
+  white-space: nowrap;
+  font-size: 7px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.paper-item-type.part { background: #e8f0ff; color: #214cb5; }
+.paper-item-type.service { background: #e5f7ef; color: #087443; }
+.paper-item-type.manual { background: #eef1f5; color: #647084; }
 .paper th:nth-last-child(-n + 2),
 .paper td:nth-last-child(-n + 2) {
   text-align: right;
@@ -912,7 +924,7 @@ textarea {
 .registry-row strong, .registry-row small, .service-row strong, .service-row small { display: block; }
 .registry-row small, .service-row small { color: var(--muted); margin-top: 4px; font-size: 10px; }
 .registry-row button, .service-row button { border: 0; background: none; color: var(--blue); font-weight: 700; }
-.service-head, .service-row { grid-template-columns: 110px 1fr 90px 130px 120px; }
+.service-head, .service-row { grid-template-columns: 110px 1fr 90px 130px 205px; }
 .service-head { color: var(--muted); background: #f7f8fb; font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .service-row code { color: var(--blue); font-weight: 800; }
 .registry-empty { color: var(--muted); text-align: center; padding: 30px; }
@@ -921,8 +933,9 @@ textarea {
 .services-paper-head img { width: 75px; height: 60px; object-fit: contain; }
 .services-paper-head h2 { color: var(--navy); margin: 0 0 5px; font-size: 18px; }
 .services-paper-head p { color: var(--muted); margin: 0; font-size: 10px; }
-.pdf-service-head, .pdf-service-row { grid-template-columns: 110px 1fr 90px 130px 120px; }
+.pdf-service-head, .pdf-service-row { grid-template-columns: 110px 1fr 90px 130px 205px; }
 .service-actions { display: flex; gap: 8px; }
+.service-actions .add-to-budget { padding: 7px 9px; border-radius: 7px; background: #edf3ff; color: var(--blue); }
 .service-row .delete-service { color: var(--red); }
 .services-paper.is-exporting .pdf-service-head, .services-paper.is-exporting .pdf-service-row { grid-template-columns: 110px 1fr 90px 130px; }
 .services-paper.is-exporting .service-actions, .services-paper.is-exporting .service-actions-label { display: none; }
@@ -1806,4 +1819,55 @@ textarea:focus {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Mensalidade Mercado Pago */
+.billing-page { min-height: 100vh; padding: 28px; background: #f4f7fb; color: var(--navy); }
+.billing-topbar { max-width: 1180px; margin: 0 auto 22px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.billing-topbar p { margin: 0 0 5px; color: var(--blue); font-size: 11px; font-weight: 900; letter-spacing: .12em; }
+.billing-topbar h1 { margin: 0 0 5px; font-size: 30px; }
+.billing-topbar span { color: var(--muted); font-size: 13px; }
+.billing-grid { max-width: 1180px; margin: auto; display: grid; grid-template-columns: 1.3fr .7fr; gap: 18px; }
+.billing-status-card, .pix-card, .billing-history { padding: 24px; }
+.billing-card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.billing-card-title span, .pix-card > div > span { color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.billing-card-title h2, .pix-card h2 { margin: 7px 0 0; font-size: 25px; }
+.billing-badge { padding: 8px 11px; border-radius: 99px; background: #edf2fb; color: #51627e; font-size: 10px; font-weight: 900; font-style: normal; }
+.billing-badge.active { background: #dcf6ea; color: #08764c; }
+.billing-badge.grace { background: #fff2d9; color: #9b5d00; }
+.billing-badge.blocked, .billing-badge.inactive { background: #ffe6e6; color: #a52424; }
+.billing-dates { margin: 24px 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.billing-dates > div { padding: 15px; background: #f7f9fd; border: 1px solid #e3e9f3; border-radius: 10px; }
+.billing-dates span, .billing-dates strong { display: block; }
+.billing-dates span { margin-bottom: 6px; color: var(--muted); font-size: 10px; }
+.billing-dates strong { font-size: 13px; }
+.billing-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.button.danger { background: #b62d2d; color: #fff; border-color: #b62d2d; }
+.billing-message { margin-top: 15px; padding: 12px 14px; border-radius: 8px; background: #eef3ff; color: #38527e; font-size: 12px; }
+.pix-card { display: flex; flex-direction: column; gap: 13px; }
+.pix-card img { width: min(230px, 100%); margin: auto; border-radius: 10px; }
+.pix-card textarea { min-height: 80px; resize: none; font-size: 10px; word-break: break-all; }
+.pix-card p { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.billing-history { max-width: 1180px; margin: 18px auto 0; }
+.billing-table { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.billing-row { min-width: 720px; display: grid; grid-template-columns: 1.5fr .8fr 1.2fr .8fr 1.2fr; gap: 12px; align-items: center; padding: 13px 15px; border-top: 1px solid var(--line); font-size: 11px; }
+.billing-row.head { border-top: 0; background: #f7f8fb; color: var(--muted); font-size: 9px; font-weight: 900; text-transform: uppercase; }
+.billing-row em { width: max-content; padding: 5px 8px; border-radius: 99px; background: #eef3ff; color: var(--blue); font-style: normal; font-weight: 900; }
+.blocked-card { text-align: center; }
+.blocked-card .button { width: 100%; margin-top: 16px; }
+.billing-overview { width: 100%; }
+.billing-inline-loading { padding: 40px; text-align: center; color: var(--muted); }
+.billing-block-alert { max-width: 1180px; margin: 0 auto 18px; padding: 15px 18px; display: flex; flex-direction: column; gap: 5px; border: 1px solid #f1b7b7; border-radius: 11px; background: #fff0f0; color: #8f2424; }
+.billing-block-alert strong { font-size: 14px; }
+.billing-block-alert span { font-size: 11px; line-height: 1.5; }
+.blocked-billing-page .billing-history { margin-bottom: 20px; }
+
+@media (max-width: 760px) {
+  .billing-page { width: 100%; padding: 16px; }
+  .billing-topbar { align-items: flex-start; }
+  .billing-grid { grid-template-columns: 1fr; }
+  .billing-status-card, .pix-card, .billing-history { padding: 17px; }
+  .billing-card-title { flex-direction: column; }
+  .billing-dates { grid-template-columns: 1fr; }
+  .billing-actions .button { width: 100%; }
 }

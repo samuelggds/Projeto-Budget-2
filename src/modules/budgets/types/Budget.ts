@@ -39,6 +39,5 @@ export type Budget = {
   items: BudgetItem[]
   updatedAt: string
   pdfSavedAt?: string
-  splitPaidAt?: string
   stockDeductedAt?: string
 }

@@ -1,18 +1,28 @@
 import { ReactNode, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { authorizedEmail, isAuthConfigured, supabase } from "../services/supabase";
+import { isAuthConfigured, supabase } from "../services/supabase";
 import { LoginPage } from "./LoginPage";
+import { BillingPanel, SubscriptionBlocked } from "../../billing/components/BillingPanel";
+import { loadBilling, loadCurrentRole, subscriptionAllowsAccess } from "../../billing/services/billingApi";
+import type { AppRole, AppSubscription } from "../../billing/types/Billing";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<AppRole | null>(null);
+  const [subscription, setSubscription] = useState<AppSubscription | null>(null);
+  const [accessError, setAccessError] = useState("");
 
   useEffect(() => {
     const acceptUser = async (candidate: User | null) => {
-      const allowed = candidate && (!authorizedEmail || candidate.email?.toLowerCase() === authorizedEmail);
-      if (candidate && !allowed) await supabase.auth.signOut({ scope: "local" });
-      setUser(allowed ? candidate : null);
-      setLoading(false);
+      setUser(candidate);
+      if (!candidate) { setRole(null); setSubscription(null); setLoading(false); return; }
+      try {
+        const currentRole = await loadCurrentRole();
+        const billing = await loadBilling();
+        setRole(currentRole); setSubscription(billing.subscription); setAccessError("");
+      } catch (error) { setAccessError((error as Error).message); }
+      finally { setLoading(false); }
     };
 
     if (!isAuthConfigured) { setLoading(false); return; }
@@ -22,5 +32,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, []);
 
   if (loading) return <div className="auth-loading"><img src="/MG.jpg" alt="MG" /><span>Verificando acesso...</span></div>;
-  return user ? children : <LoginPage />;
+  if (!user) return <LoginPage />;
+  if (accessError || !role || !subscription) return <main className="database-error-page"><section className="login-card"><div className="login-error">{accessError || "Conta sem permissão configurada"}</div><button className="button primary" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</button></section></main>;
+  if (role === "BILLING_ADMIN") return <BillingPanel />;
+  return subscriptionAllowsAccess(subscription) ? children : <SubscriptionBlocked subscription={subscription} />;
 }
