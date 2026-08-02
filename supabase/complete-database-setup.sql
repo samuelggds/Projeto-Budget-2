@@ -66,9 +66,9 @@ create table if not exists public.budget_items (
 
 create table if not exists public.app_settings (
   id text primary key default 'main' check (id = 'main'),
-  company_name text not null default 'MG Refrigeração',
-  app_name text not null default 'MG Orçamentos',
-  segment text not null default 'Refrigeração',
+  company_name text not null default 'Sua empresa',
+  app_name text not null default 'Orçamentos',
+  segment text not null default 'Gestão de propostas',
   document text,
   phone text,
   email text,

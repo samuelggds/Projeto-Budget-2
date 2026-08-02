@@ -31,7 +31,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return () => data.subscription.unsubscribe();
   }, []);
 
-  if (loading) return <div className="auth-loading"><img src="/MG.jpg" alt="MG" /><span>Verificando acesso...</span></div>;
+  if (loading) return <div className="auth-loading"><img src="/logo-placeholder.svg" alt="Logo" /><span>Verificando acesso...</span></div>;
   if (!user) return <LoginPage />;
   if (accessError || !role || !subscription) return <main className="database-error-page"><section className="login-card"><div className="login-error">{accessError || "Conta sem permissão configurada"}</div><button className="button primary" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</button></section></main>;
   if (role === "BILLING_ADMIN") return <BillingPanel />;

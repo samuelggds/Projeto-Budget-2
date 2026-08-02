@@ -1,7 +1,9 @@
 import { FormEvent, useState } from "react";
 import { isAuthConfigured, supabase } from "../services/supabase";
+import { usePublicBrand } from "../../settings/services/publicBrand";
 
 export function LoginPage() {
+  const brand = usePublicBrand();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -19,7 +21,7 @@ export function LoginPage() {
   return (
     <main className="login-page">
       <section className="login-card">
-        <div className="login-brand"><img src="/MG.jpg" alt="MG Refrigeração" /><div><strong>MG Orçamentos</strong><span>Acesso administrativo</span></div></div>
+        <div className="login-brand"><img src={brand.logoDataUrl || "/logo-placeholder.svg"} alt={`Logo de ${brand.companyName}`} /><div><strong>{brand.appName}</strong><span>{brand.companyName}</span></div></div>
         <div className="login-heading"><p>ÁREA PROTEGIDA</p><h1>Entre na sua conta</h1><span>Use sua conta administrativa ou de cobrança.</span></div>
         {!isAuthConfigured ? <div className="login-warning"><strong>Configure a autenticação</strong><span>Preencha VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no arquivo .env.</span></div> : (
           <form onSubmit={submit}>

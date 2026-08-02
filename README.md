@@ -1,6 +1,6 @@
-# MG Orçamentos
+# Orçamentos
 
-Aplicação React + TypeScript com Supabase, orçamentos, clientes, serviços, estoque, PDF e mensalidade recorrente de R$ 250 via Pix Mercado Pago.
+Aplicação React + TypeScript com Supabase, marca personalizável, orçamentos, clientes, serviços, estoque, PDF e mensalidade recorrente de R$ 250 via Pix Mercado Pago.
 
 ## Executar o frontend
 
@@ -33,6 +33,7 @@ Execute uma vez no SQL Editor:
 9. `subscription-reactivation-reset.sql`
 10. `billing-automation-migration.sql`
 11. `subscription-access-enforcement.sql`
+12. `public-brand-migration.sql`
 
 ## Secrets das Edge Functions
 

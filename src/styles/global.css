@@ -1827,6 +1827,8 @@ textarea:focus {
 .billing-topbar p { margin: 0 0 5px; color: var(--blue); font-size: 11px; font-weight: 900; letter-spacing: .12em; }
 .billing-topbar h1 { margin: 0 0 5px; font-size: 30px; }
 .billing-topbar span { color: var(--muted); font-size: 13px; }
+.billing-brand-heading { display: flex; align-items: center; gap: 13px; }
+.billing-brand-heading > img { width: 48px; height: 48px; object-fit: contain; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
 .billing-grid { max-width: 1180px; margin: auto; display: grid; grid-template-columns: 1.3fr .7fr; gap: 18px; }
 .billing-status-card, .pix-card, .billing-history { padding: 24px; }
 .billing-card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }

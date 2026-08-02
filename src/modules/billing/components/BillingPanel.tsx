@@ -3,11 +3,13 @@ import { supabase } from "../../auth/services/supabase";
 import { activateSubscription, deactivateSubscription, loadBilling, refreshSubscriptionCharge } from "../services/billingApi";
 import type { AppSubscription, SubscriptionInvoice } from "../types/Billing";
 import { BillingOverview } from "./BillingOverview";
+import { usePublicBrand } from "../../settings/services/publicBrand";
 
 const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const date = (value?: string) => value ? new Date(value).toLocaleString("pt-BR") : "—";
 
 export function BillingPanel() {
+  const brand = usePublicBrand();
   const [subscription, setSubscription] = useState<AppSubscription | null>(null);
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ export function BillingPanel() {
   const pending = invoices.find((invoice) => invoice.status === "PENDING");
 
   return <main className="billing-page">
-    <header className="billing-topbar"><div><p>GESTÃO DE COBRANÇA</p><h1>Mensalidade</h1><span>Controle exclusivo da conta de cobrança</span></div><button className="button ghost" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</button></header>
+    <header className="billing-topbar"><div className="billing-brand-heading"><img src={brand.logoDataUrl || "/logo-placeholder.svg"} alt={`Logo de ${brand.companyName}`} /><div><p>{brand.appName.toUpperCase()}</p><h1>Mensalidade</h1><span>{brand.companyName} · controle da conta de cobrança</span></div></div><button className="button ghost" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</button></header>
     <section className="billing-grid">
       <article className="card billing-status-card">
         <div className="billing-card-title"><div><span>Situação atual</span><h2>{subscription.status}</h2></div><em className={`billing-badge ${subscription.status.toLowerCase()}`}>{subscription.billingEnabled ? "Recorrência ligada" : "Recorrência desligada"}</em></div>
@@ -62,5 +64,6 @@ export function BillingPanel() {
 }
 
 export function SubscriptionBlocked({ subscription }: { subscription: AppSubscription }) {
-  return <main className="billing-page blocked-billing-page"><header className="billing-topbar"><div><p>MG ORÇAMENTOS</p><h1>Mensalidade</h1><span>{subscription.status === "INACTIVE" ? "A mensalidade foi desativada." : "O prazo de pagamento terminou."}</span></div><button className="button ghost" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</button></header><BillingOverview blocked /></main>;
+  const brand = usePublicBrand();
+  return <main className="billing-page blocked-billing-page"><header className="billing-topbar"><div className="billing-brand-heading"><img src={brand.logoDataUrl || "/logo-placeholder.svg"} alt={`Logo de ${brand.companyName}`} /><div><p>{brand.appName.toUpperCase()}</p><h1>Mensalidade</h1><span>{subscription.status === "INACTIVE" ? "A mensalidade foi desativada." : "O prazo de pagamento terminou."}</span></div></div><button className="button ghost" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</button></header><BillingOverview blocked /></main>;
 }

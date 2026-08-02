@@ -354,7 +354,7 @@ export function BudgetApplication() {
   if (databaseLoading) return <div className="auth-loading"><img src="/logo-placeholder.svg" alt="Logo" /><span>Carregando dados do banco...</span></div>;
 
   if (databaseError) return (
-    <main className="database-error-page"><section className="login-card"><div className="login-brand"><img src="/MG.jpg" alt="MG" /><div><strong>Erro ao acessar o banco</strong><span>Confira a configuração do Supabase</span></div></div><div className="login-error">{databaseError}</div><p>Confirme se as tabelas foram criadas, se o RLS possui as políticas indicadas e se as variáveis do arquivo .env estão corretas.</p><button className="button primary" onClick={() => window.location.reload()}>Tentar novamente</button></section></main>
+    <main className="database-error-page"><section className="login-card"><div className="login-brand"><img src="/logo-placeholder.svg" alt="Logo" /><div><strong>Erro ao acessar o banco</strong><span>Confira a configuração do Supabase</span></div></div><div className="login-error">{databaseError}</div><p>Confirme se as tabelas foram criadas, se o RLS possui as políticas indicadas e se as variáveis do arquivo .env estão corretas.</p><button className="button primary" onClick={() => window.location.reload()}>Tentar novamente</button></section></main>
   );
 
   return (
@@ -1068,7 +1068,7 @@ export function BudgetApplication() {
             </div>
             <div className="card settings-form">
               <div className="section-title">
-                <span>MG</span>
+                <span>ID</span>
                 <div>
                   <h2>Dados da empresa</h2>
                   <p>Estas informações aparecem no orçamento</p>
