@@ -20,7 +20,7 @@ create table if not exists public.services (
   id uuid primary key,
   code text not null unique,
   description text not null,
-  unit text not null default 'serv.',
+  unit text not null default 'un.',
   unit_price numeric(12,2) not null default 0 check (unit_price >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

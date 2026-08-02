@@ -37,13 +37,13 @@ export function BudgetApplication() {
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [periodFilter, setPeriodFilter] = useState("Todos");
   const [historyVisibleCount, setHistoryVisibleCount] = useState(10);
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [databaseLoading, setDatabaseLoading] = useState(true);
   const [databaseError, setDatabaseError] = useState("");
   const [clientDraft, setClientDraft] = useState<Client>({ id: "", name: "", document: "", phone: "", email: "", contact: "", address: "", city: "", state: "CE", cep: "" });
-  const [serviceDraft, setServiceDraft] = useState<Service>({ id: "", code: "", description: "", unit: "serv.", unitPrice: 0 });
+  const [serviceDraft, setServiceDraft] = useState<Service>({ id: "", code: "", description: "", unit: "un.", unitPrice: 0 });
   const [appSettings, setAppSettings] = useState<AppSettings>({ ...DEFAULT_APP_SETTINGS });
   const [parts, setParts] = useState<Part[]>([]);
   const [partDraft, setPartDraft] = useState<Part>({ id: "", code: "", description: "", stockQuantity: 0, unitPrice: 0 });
@@ -79,9 +79,9 @@ export function BudgetApplication() {
     return () => window.clearTimeout(scrollTimer);
   }, [serviceDraft.id, tab]);
 
-  const notify = (text: string) => {
-    setToast(text);
-    window.setTimeout(() => setToast(""), 2600);
+  const notify = (text: string, type: "success" | "error" = "success") => {
+    setToast({ text, type });
+    window.setTimeout(() => setToast(null), 2600);
   };
 
   const updateClient = (field: keyof Budget["client"], value: string) =>
@@ -99,7 +99,7 @@ export function BudgetApplication() {
         const availableForLine = Math.max(0, part.stockQuantity - usedInOtherLines);
         if (Number(value) > availableForLine) {
           nextValue = availableForLine;
-          notify(`Estoque insuficiente para ${part.description}. Disponível neste orçamento: ${availableForLine} un.`);
+          notify(`Estoque insuficiente para ${part.description}. Disponível neste orçamento: ${availableForLine} un.`, "error");
         }
       }
     }
@@ -188,20 +188,20 @@ export function BudgetApplication() {
     if (parts.some((item) => item.code.toLowerCase() === serviceDraft.code.toLowerCase())) return notify("Este código já pertence a uma peça do estoque");
     const isEditing = Boolean(serviceDraft.id);
     try {
-      const current = await saveServiceToDatabase({ ...serviceDraft, id: serviceDraft.id || crypto.randomUUID() });
+      const current = await saveServiceToDatabase({ ...serviceDraft, unit: "un.", id: serviceDraft.id || crypto.randomUUID() });
       setServices([current, ...services.filter((item) => item.id !== current.id)]);
-      setServiceDraft({ id: "", code: "", description: "", unit: "serv.", unitPrice: 0 });
+      setServiceDraft({ id: "", code: "", description: "", unit: "un.", unitPrice: 0 });
       notify(isEditing ? "Serviço atualizado no banco" : "Serviço salvo no banco");
     } catch (error) { notify(`Erro: ${(error as Error).message}`); }
   };
 
   const editService = (service: Service) => {
-    setServiceDraft(service);
+    setServiceDraft({ ...service, unit: "un." });
     notify(`Editando o serviço ${service.code}`);
   };
 
   const clearServiceDraft = () => {
-    setServiceDraft({ id: "", code: "", description: "", unit: "serv.", unitPrice: 0 });
+    setServiceDraft({ id: "", code: "", description: "", unit: "un.", unitPrice: 0 });
   };
 
   const clearPartDraft = () => setPartDraft({ id: "", code: "", description: "", stockQuantity: 0, unitPrice: 0 });
@@ -288,7 +288,7 @@ export function BudgetApplication() {
   const advanceStatus = async (nextStatus: Budget["status"]) => {
     if (!getAllowedNextStatuses(budget.status).includes(nextStatus)) return notify("Mudança de status não permitida");
     const stockError = nextStatus === "Aprovado" ? stockValidationError(budget) : "";
-    if (stockError) return notify(`Estoque insuficiente: ${stockError}`);
+    if (stockError) return notify(`Estoque insuficiente: ${stockError}`, "error");
     try {
       const updated = nextStatus === "Aprovado"
         ? await approveBudgetAndDeductStock(withDefaultItemUnit(budget))
@@ -304,7 +304,7 @@ export function BudgetApplication() {
     try {
       await deleteServiceFromDatabase(service.id);
       setServices(services.filter((item) => item.id !== service.id));
-      if (serviceDraft.id === service.id) setServiceDraft({ id: "", code: "", description: "", unit: "serv.", unitPrice: 0 });
+      if (serviceDraft.id === service.id) setServiceDraft({ id: "", code: "", description: "", unit: "un.", unitPrice: 0 });
       notify("Serviço excluído do banco");
     } catch (error) { notify(`Erro: ${(error as Error).message}`); }
   };
@@ -324,7 +324,7 @@ export function BudgetApplication() {
 
   const saveBudget = async () => {
     const stockError = stockValidationError(budget);
-    if (stockError) return notify(`Não foi possível salvar. Estoque insuficiente: ${stockError}`);
+    if (stockError) return notify(`Não foi possível salvar. Estoque insuficiente: ${stockError}`, "error");
     try {
       const current = await saveBudgetToDatabase(withDefaultItemUnit(budget));
       setBudget(current); setSaved([current, ...saved.filter((item) => item.id !== current.id)]);
@@ -361,7 +361,7 @@ export function BudgetApplication() {
 
   const generateAndStorePdf = async () => {
     const stockError = stockValidationError(budget);
-    if (stockError) return notify(`Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`);
+    if (stockError) return notify(`Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`, "error");
     const element = document.getElementById("budget-pdf");
     if (!element) return;
     notify("Gerando PDF...");
@@ -1054,7 +1054,7 @@ export function BudgetApplication() {
               <div className="form-grid">
                 <label>Código<input placeholder="Ex.: SRV-001" value={serviceDraft.code} onChange={(e) => setServiceDraft({ ...serviceDraft, code: e.target.value.toUpperCase() })} /></label>
                 <label className="wide">Serviço<input value={serviceDraft.description} onChange={(e) => setServiceDraft({ ...serviceDraft, description: e.target.value })} /></label>
-                <label>Unidade<SmoothSelect ariaLabel="Unidade do serviço" value={serviceDraft.unit} onChange={(value) => setServiceDraft({ ...serviceDraft, unit: value })} options={[{ value: "serv.", label: "serv." }, { value: "un.", label: "un." }, { value: "h", label: "h" }, { value: "m", label: "m" }, { value: "kg", label: "kg" }]} /></label>
+                <label>Unidade<input value="un." readOnly aria-label="Unidade do serviço" /></label>
                 <label>Valor<input type="number" min="0" step=".01" value={serviceDraft.unitPrice || ""} onChange={(e) => setServiceDraft({ ...serviceDraft, unitPrice: Number(e.target.value) })} /></label>
               </div>
               <div className="service-form-actions">
@@ -1175,7 +1175,7 @@ export function BudgetApplication() {
           </section>
         )}
       </main>
-      {toast && <div className="toast">✓ {toast}</div>}
+      {toast && <div className={`toast ${toast.type}`}>{toast.type === "error" ? "!" : "✓"} {toast.text}</div>}
     </div>
   );
 }

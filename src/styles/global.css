@@ -1172,6 +1172,11 @@ textarea {
   font-size: 13px;
   z-index: 20;
 }
+.toast.error {
+  background: #b42318;
+  border: 1px solid #f97066;
+  box-shadow: 0 10px 30px rgb(180 35 24 / 24%);
+}
 @media (max-width: 1050px) {
   .sidebar {
     width: 82px;

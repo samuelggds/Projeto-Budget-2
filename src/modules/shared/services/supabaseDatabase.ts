@@ -153,7 +153,7 @@ export async function saveClientToDatabase(client: Client) {
 export async function saveServiceToDatabase(service: Service) {
   const { data, error } = await supabase.from("services").upsert({
     id: service.id, code: service.code, description: service.description,
-    unit: service.unit, unit_price: service.unitPrice, updated_at: new Date().toISOString(),
+    unit: "un.", unit_price: service.unitPrice, updated_at: new Date().toISOString(),
   }).select().single();
   assertNoError(error); return mapService(data as Record<string, unknown>);
 }

@@ -35,6 +35,7 @@ Execute uma vez no SQL Editor:
 11. `subscription-access-enforcement.sql`
 12. `public-brand-migration.sql`
 13. `billing-realtime-migration.sql`
+14. `service-unit-migration.sql`
 
 ## Secrets das Edge Functions
 
