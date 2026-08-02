@@ -8,7 +8,7 @@ const YELLOW = "\x1b[33m";
 const CYAN = "\x1b[36m";
 const DIM = "\x1b[2m";
 
-let output = "";
+let output;
 let errorCount = 0;
 const errors = [];
 

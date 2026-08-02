@@ -3,7 +3,39 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": { "dev": "vite", "build": "tsc -b && vite build", "check": "node scripts/check.mjs", "preview": "vite preview" },
-  "dependencies": { "@supabase/supabase-js": "^2.57.4", "@vitejs/plugin-react": "latest", "html2pdf.js": "^0.12.1", "vite": "latest", "typescript": "latest", "react": "latest", "react-dom": "latest" },
-  "devDependencies": { "@types/react": "latest", "@types/react-dom": "latest" }
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "check": "node scripts/check.mjs",
+    "preview": "vite preview",
+    "lint": "eslint . --max-warnings 0",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "ci": "npm run lint && npm run type-check && npm run test:coverage && npm audit --audit-level=moderate && npm run build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "@vitejs/plugin-react": "latest",
+    "html2pdf.js": "^0.14.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.9.0",
+    "jsdom": "^29.1.1",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  }
 }

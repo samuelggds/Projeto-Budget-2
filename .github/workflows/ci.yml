@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+# Cancel in-progress runs for the same branch to avoid redundant work
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint · Type-Check · Tests · Security · Build
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Source ────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js LTS + npm cache ───────────────────────────────────────────
+      - name: Setup Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── 3. Lint (zero warnings allowed) ─────────────────────────────────────
+      - name: Lint
+        run: npx eslint . --max-warnings 0
+
+      # ── 4. Type-check ────────────────────────────────────────────────────────
+      - name: Type-Check
+        run: npx tsc --noEmit
+
+      # ── 5. Tests + coverage ──────────────────────────────────────────────────
+      - name: Tests & Coverage
+        run: npx vitest run --coverage
+
+      # ── 6. Security audit ────────────────────────────────────────────────────
+      - name: Security Audit
+        # Fails on moderate or higher CVEs; adjust level as needed (low|moderate|high|critical)
+        run: npm audit --audit-level=moderate
+
+      # ── 7. Production build ──────────────────────────────────────────────────
+      - name: Build
+        run: npm run build
