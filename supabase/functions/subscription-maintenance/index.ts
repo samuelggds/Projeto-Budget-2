@@ -14,7 +14,7 @@ async function authorized(request: Request) {
   const { data: userData } = await client.auth.getUser();
   if (!userData.user) return false;
   const { data } = await client.from("app_user_roles").select("role").eq("user_id", userData.user.id).maybeSingle();
-  return data?.role === "BILLING_ADMIN";
+  return data?.role === "BILLING_ADMIN" || data?.role === "ADMIN";
 }
 
 function mercadoPagoConfig() {
@@ -25,7 +25,6 @@ function mercadoPagoConfig() {
   return {
     production,
     accessToken,
-    amount: production ? "250.00" : "50.00",
     payer: production
       ? { email: Deno.env.get("MERCADO_PAGO_PAYER_EMAIL") ?? "" }
       : { email: "test_user_br@testuser.com", first_name: "APRO" },
@@ -69,6 +68,9 @@ Deno.serve(async (request) => {
     }
 
     if (!mercadoPago.accessToken || !mercadoPago.payer.email) throw new Error("Credenciais do Mercado Pago incompletas");
+    const chargeAmount = Number(invoice.amount);
+    if (!Number.isFinite(chargeAmount) || chargeAmount <= 0) throw new Error("Valor da cobrança inválido");
+    const mercadoPagoAmount = chargeAmount.toFixed(2);
     if (invoice.mercado_pago_order_id) {
       const orderResponse = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(invoice.mercado_pago_order_id)}`, {
         headers: { Authorization: `Bearer ${mercadoPago.accessToken}` },
@@ -102,8 +104,8 @@ Deno.serve(async (request) => {
       method: "POST",
       headers: { "Authorization": `Bearer ${mercadoPago.accessToken}`, "Content-Type": "application/json", "X-Idempotency-Key": invoice.id },
       body: JSON.stringify({
-        type: "online", total_amount: mercadoPago.amount, external_reference: externalReference,
-        processing_mode: "automatic", transactions: { payments: [{ amount: mercadoPago.amount, payment_method: { id: "pix", type: "bank_transfer" }, expiration_time: `P${remainingDays}D` }] },
+        type: "online", total_amount: mercadoPagoAmount, external_reference: externalReference,
+        processing_mode: "automatic", transactions: { payments: [{ amount: mercadoPagoAmount, payment_method: { id: "pix", type: "bank_transfer" }, expiration_time: `P${remainingDays}D` }] },
         payer: mercadoPago.payer,
       }),
     });

@@ -34,6 +34,7 @@ Execute uma vez no SQL Editor:
 10. `billing-automation-migration.sql`
 11. `subscription-access-enforcement.sql`
 12. `public-brand-migration.sql`
+13. `billing-realtime-migration.sql`
 
 ## Secrets das Edge Functions
 
@@ -82,6 +83,17 @@ Agendamento sugerido: `0 12 * * *` (todos os dias às 12:00 UTC, 09:00 no horár
 
 O botão Atualizar cobrança também chama a manutenção manualmente pela conta `BILLING_ADMIN`.
 
+## Preparar para entregar a um novo cliente
+
+Depois de testar o sistema, execute `supabase/reset-for-new-client.sql` uma única
+vez no SQL Editor. O script limpa os dados operacionais e a identidade da empresa,
+mas preserva os usuários do Auth e suas funções de acesso.
+
+Depois do reset, entre como `ADMIN`, abra **Configurações** e preencha logo, nome
+da empresa, nome do sistema, segmento, CNPJ/CPF, telefone, e-mail e endereço.
+Esses dados serão usados na interface e nos PDFs. A conta `BILLING_ADMIN` deve
+reativar a mensalidade quando a instalação estiver pronta para uso.
+
 ## Regra da mensalidade
 
 - Ativar inicia um ciclo de um mês.
@@ -90,3 +102,16 @@ O botão Atualizar cobrança também chama a manutenção manualmente pela conta
 - Após a tolerância, o banco nega acesso aos dados e o frontend mostra o bloqueio.
 - O webhook confirma o pagamento e inicia o ciclo seguinte.
 - Desativar bloqueia imediatamente, cancela cobranças pendentes e interrompe novos ciclos.
+
+## Teste real de produção por R$ 1
+
+Para validar uma única cobrança real, publique primeiro a Edge Function atualizada
+`subscription-maintenance`. Depois execute `prepare-production-test-one-real.sql`,
+clique em **Atualizar cobrança** e confira o QR Code de R$ 1. Assim que ele aparecer,
+execute `restore-production-monthly-amount.sql` para restaurar os próximos ciclos
+para R$ 250. Nunca deixe o valor temporário de R$ 1 ativo depois do teste.
+
+Depois de executar `billing-realtime-migration.sql`, as telas recebem alterações
+da mensalidade pelo Supabase Realtime. Enquanto existir uma fatura pendente, a
+tela também faz uma reconciliação automática a cada 10 segundos como garantia
+caso a notificação do Mercado Pago demore.

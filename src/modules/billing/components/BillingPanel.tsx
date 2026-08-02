@@ -24,6 +24,15 @@ export function BillingPanel() {
 
   useEffect(() => { refresh().catch((error: Error) => setMessage(error.message)).finally(() => setLoading(false)); }, []);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel(`billing-panel-${crypto.randomUUID()}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_subscription" }, () => void refresh())
+      .on("postgres_changes", { event: "*", schema: "public", table: "subscription_invoices" }, () => void refresh())
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, []);
+
   const run = async (action: () => Promise<unknown>, success: string) => {
     setWorking(true); setMessage("");
     try {

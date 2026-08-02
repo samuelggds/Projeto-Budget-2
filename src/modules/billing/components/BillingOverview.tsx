@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { loadBilling } from "../services/billingApi";
+import { supabase } from "../../auth/services/supabase";
+import { loadBilling, refreshSubscriptionCharge } from "../services/billingApi";
 import type { AppSubscription, SubscriptionInvoice } from "../types/Billing";
 
 const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -21,10 +22,37 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    const channel = supabase
+      .channel(`billing-overview-${crypto.randomUUID()}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_subscription" }, () => void refresh())
+      .on("postgres_changes", { event: "*", schema: "public", table: "subscription_invoices" }, () => void refresh())
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, []);
   const pending = invoices.find((invoice) => invoice.status === "PENDING");
   const visibleInvoices = invoices.slice(0, visibleInvoiceCount);
   const hasMoreInvoices = visibleInvoiceCount < invoices.length;
+
+  useEffect(() => {
+    if (!pending) return;
+    let checking = false;
+    const reconcile = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        await refreshSubscriptionCharge();
+        await refresh();
+      } catch {
+        // O próximo ciclo tenta novamente; a tela continua disponível para pagamento.
+      } finally {
+        checking = false;
+      }
+    };
+    const interval = window.setInterval(() => void reconcile(), 10_000);
+    return () => window.clearInterval(interval);
+  }, [Boolean(pending)]);
 
   if (loading && !subscription) return <div className="billing-inline-loading">Carregando mensalidade...</div>;
   if (!subscription) return <div className="billing-message">{message || "Não foi possível carregar a mensalidade."}</div>;
