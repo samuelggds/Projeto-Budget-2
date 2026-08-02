@@ -103,14 +103,6 @@ reativar a mensalidade quando a instalação estiver pronta para uso.
 - O webhook confirma o pagamento e inicia o ciclo seguinte.
 - Desativar bloqueia imediatamente, cancela cobranças pendentes e interrompe novos ciclos.
 
-## Teste real de produção por R$ 1
-
-Para validar uma única cobrança real, publique primeiro a Edge Function atualizada
-`subscription-maintenance`. Depois execute `prepare-production-test-one-real.sql`,
-clique em **Atualizar cobrança** e confira o QR Code de R$ 1. Assim que ele aparecer,
-execute `restore-production-monthly-amount.sql` para restaurar os próximos ciclos
-para R$ 250. Nunca deixe o valor temporário de R$ 1 ativo depois do teste.
-
 Depois de executar `billing-realtime-migration.sql`, as telas recebem alterações
 da mensalidade pelo Supabase Realtime. Enquanto existir uma fatura pendente, a
 tela também faz uma reconciliação automática a cada 10 segundos como garantia

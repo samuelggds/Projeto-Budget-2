@@ -87,13 +87,41 @@ export function BudgetApplication() {
   const updateClient = (field: keyof Budget["client"], value: string) =>
     setBudget((old) => ({ ...old, client: { ...old.client, [field]: value } }));
 
-  const updateItem = (id: string, field: keyof Item, value: string | number) =>
+  const updateItem = (id: string, field: keyof Item, value: string | number) => {
+    let nextValue = value;
+    const selectedItem = budget.items.find((item) => item.id === id);
+    if (field === "quantity" && selectedItem?.partId) {
+      const part = parts.find((item) => item.id === selectedItem.partId);
+      if (part) {
+        const usedInOtherLines = budget.items
+          .filter((item) => item.id !== id && item.partId === part.id)
+          .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+        const availableForLine = Math.max(0, part.stockQuantity - usedInOtherLines);
+        if (Number(value) > availableForLine) {
+          nextValue = availableForLine;
+          notify(`Estoque insuficiente para ${part.description}. Disponível neste orçamento: ${availableForLine} un.`);
+        }
+      }
+    }
     setBudget((old) => ({
       ...old,
       items: old.items.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item,
+        item.id === id ? { ...item, [field]: nextValue } : item,
       ),
     }));
+  };
+
+  const stockValidationError = (current: Budget) => {
+    for (const part of parts) {
+      const requested = current.items
+        .filter((item) => item.partId === part.id)
+        .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+      if (requested > part.stockQuantity) {
+        return `${part.description}: solicitado ${requested} un., disponível ${part.stockQuantity} un.`;
+      }
+    }
+    return "";
+  };
 
   const addItem = () =>
     setBudget((old) => ({
@@ -121,6 +149,12 @@ export function BudgetApplication() {
     const service = services.find((item) => item.code.toLowerCase() === code.trim().toLowerCase() || item.id === code.trim());
     const part = parts.find((item) => item.code.toLowerCase() === code.trim().toLowerCase() || item.id === code.trim());
     if (part && part.stockQuantity <= 0) return notify(`${part.description} está indisponível no estoque`);
+    const alreadyUsed = part ? budget.items
+        .filter((item) => item.id !== itemId && item.partId === part.id)
+        .reduce((sum, item) => sum + Number(item.quantity || 0), 0) : 0;
+    if (part) {
+      if (alreadyUsed >= part.stockQuantity) return notify(`Todo o estoque de ${part.description} já está neste orçamento`);
+    }
     setBudget((old) => ({
       ...old, items: old.items.map((item) => item.id !== itemId ? item : service ? {
         ...item,
@@ -131,7 +165,9 @@ export function BudgetApplication() {
         unitPrice: service.unitPrice,
       } : part ? {
         ...item, serviceId: "", partId: part.id, serviceCode: part.code,
-        description: part.description, unit: "un.", unitPrice: part.unitPrice,
+        description: part.description,
+        quantity: Math.min(Math.max(Number(item.quantity) || 1, 1), part.stockQuantity - alreadyUsed),
+        unit: "un.", unitPrice: part.unitPrice,
       } : { ...item, serviceId: "", partId: "", serviceCode: code }),
     }));
   };
@@ -195,6 +231,10 @@ export function BudgetApplication() {
 
   const addPartToBudget = (part: Part) => {
     if (part.stockQuantity <= 0) return notify("Esta peça está indisponível");
+    const alreadyUsed = budget.items
+      .filter((item) => item.partId === part.id)
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    if (alreadyUsed >= part.stockQuantity) return notify(`Todo o estoque de ${part.description} já está neste orçamento`);
     setBudget((current) => {
       const base = ["Aprovado", "Pago", "Recusado"].includes(current.status) ? createNextBudget(saved) : current;
       const emptyOnly = base.items.length === 1 && !base.items[0].description.trim() && !base.items[0].serviceCode;
@@ -247,6 +287,8 @@ export function BudgetApplication() {
 
   const advanceStatus = async (nextStatus: Budget["status"]) => {
     if (!getAllowedNextStatuses(budget.status).includes(nextStatus)) return notify("Mudança de status não permitida");
+    const stockError = nextStatus === "Aprovado" ? stockValidationError(budget) : "";
+    if (stockError) return notify(`Estoque insuficiente: ${stockError}`);
     try {
       const updated = nextStatus === "Aprovado"
         ? await approveBudgetAndDeductStock(withDefaultItemUnit(budget))
@@ -281,6 +323,8 @@ export function BudgetApplication() {
   };
 
   const saveBudget = async () => {
+    const stockError = stockValidationError(budget);
+    if (stockError) return notify(`Não foi possível salvar. Estoque insuficiente: ${stockError}`);
     try {
       const current = await saveBudgetToDatabase(withDefaultItemUnit(budget));
       setBudget(current); setSaved([current, ...saved.filter((item) => item.id !== current.id)]);
@@ -316,6 +360,8 @@ export function BudgetApplication() {
   };
 
   const generateAndStorePdf = async () => {
+    const stockError = stockValidationError(budget);
+    if (stockError) return notify(`Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`);
     const element = document.getElementById("budget-pdf");
     if (!element) return;
     notify("Gerando PDF...");
@@ -623,7 +669,7 @@ export function BudgetApplication() {
                     </div>
                     <input
                       type="number"
-                      min="0"
+                      min="1"
                       value={item.quantity}
                       onChange={(e) =>
                         updateItem(item.id, "quantity", Number(e.target.value))
