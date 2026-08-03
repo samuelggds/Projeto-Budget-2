@@ -22,8 +22,7 @@ export function createInitialBudget(): Budget {
     status: "Enviado",
     client: { ...emptyClient },
     payment: "PIX",
-    notes:
-      "Materiais e mão de obra inclusos. Garantia de 90 dias para os serviços executados.",
+    notes: "",
     items: [
       {
         id: crypto.randomUUID(),

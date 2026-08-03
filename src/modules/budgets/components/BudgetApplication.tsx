@@ -1146,6 +1146,7 @@ export function BudgetApplication() {
                 <label className="full">
                   Observações
                   <textarea
+                    placeholder="Digite aqui suas observações!"
                     rows={4}
                     value={budget.notes}
                     onChange={(e) =>
