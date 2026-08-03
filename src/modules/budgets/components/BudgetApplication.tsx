@@ -9,17 +9,30 @@ import {
   calculateBudgetTotal,
   formatMoney as money,
 } from "../services/budgetCalculations";
-import {
-  filterBudgets,
-} from "../../history/services/filterBudgets";
+import { filterBudgets } from "../../history/services/filterBudgets";
 import { createBudgetPdf, downloadPdfBlob } from "../../pdf/services/budgetPdf";
 import type { Client } from "../../clients/types/Client";
 import type { Service } from "../../services/types/Service";
 import { getAllowedNextStatuses } from "../services/budgetStatus";
 import { supabase } from "../../auth/services/supabase";
-import { approveBudgetAndDeductStock, deleteBudgetFromDatabase, deletePartFromDatabase, deleteServiceFromDatabase, loadDatabase, loadPartsFromDatabase, saveAppSettingsToDatabase, saveBudgetToDatabase, saveClientToDatabase, savePartToDatabase, saveServiceToDatabase } from "../../shared/services/supabaseDatabase";
+import {
+  approveBudgetAndDeductStock,
+  deleteBudgetFromDatabase,
+  deletePartFromDatabase,
+  deleteServiceFromDatabase,
+  loadDatabase,
+  loadPartsFromDatabase,
+  saveAppSettingsToDatabase,
+  saveBudgetToDatabase,
+  saveClientToDatabase,
+  savePartToDatabase,
+  saveServiceToDatabase,
+} from "../../shared/services/supabaseDatabase";
 import { SmoothSelect } from "../../shared/components/SmoothSelect";
-import { DEFAULT_APP_SETTINGS, type AppSettings } from "../../settings/types/AppSettings";
+import {
+  DEFAULT_APP_SETTINGS,
+  type AppSettings,
+} from "../../settings/types/AppSettings";
 import type { Part } from "../../stock/types/Part";
 import { BillingOverview } from "../../billing/components/BillingOverview";
 
@@ -29,7 +42,9 @@ const withDefaultItemUnit = (current: Budget): Budget => ({
 });
 
 export function BudgetApplication() {
-  const [tab, setTab] = useState<"new" | "saved" | "clients" | "services" | "stock" | "billing" | "settings">("new");
+  const [tab, setTab] = useState<
+    "new" | "saved" | "clients" | "services" | "stock" | "billing" | "settings"
+  >("new");
   const [preview, setPreview] = useState(false);
   const [budget, setBudget] = useState<Budget>(createInitialBudget);
   const [saved, setSaved] = useState<Budget[]>([]);
@@ -37,16 +52,44 @@ export function BudgetApplication() {
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [periodFilter, setPeriodFilter] = useState("Todos");
   const [historyVisibleCount, setHistoryVisibleCount] = useState(10);
-  const [toast, setToast] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [toast, setToast] = useState<{
+    text: string;
+    type: "success" | "error";
+  } | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [databaseLoading, setDatabaseLoading] = useState(true);
   const [databaseError, setDatabaseError] = useState("");
-  const [clientDraft, setClientDraft] = useState<Client>({ id: "", name: "", document: "", phone: "", email: "", contact: "", address: "", city: "", state: "CE", cep: "" });
-  const [serviceDraft, setServiceDraft] = useState<Service>({ id: "", code: "", description: "", unit: "un.", unitPrice: 0 });
-  const [appSettings, setAppSettings] = useState<AppSettings>({ ...DEFAULT_APP_SETTINGS });
+  const [clientDraft, setClientDraft] = useState<Client>({
+    id: "",
+    name: "",
+    document: "",
+    phone: "",
+    email: "",
+    contact: "",
+    address: "",
+    city: "",
+    state: "CE",
+    cep: "",
+  });
+  const [serviceDraft, setServiceDraft] = useState<Service>({
+    id: "",
+    code: "",
+    description: "",
+    unit: "un.",
+    unitPrice: 0,
+  });
+  const [appSettings, setAppSettings] = useState<AppSettings>({
+    ...DEFAULT_APP_SETTINGS,
+  });
   const [parts, setParts] = useState<Part[]>([]);
-  const [partDraft, setPartDraft] = useState<Part>({ id: "", code: "", description: "", stockQuantity: 0, unitPrice: 0 });
+  const [partDraft, setPartDraft] = useState<Part>({
+    id: "",
+    code: "",
+    description: "",
+    stockQuantity: 0,
+    unitPrice: 0,
+  });
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const total = useMemo(() => calculateBudgetTotal(budget), [budget]);
@@ -61,8 +104,13 @@ export function BudgetApplication() {
     loadDatabase()
       .then((data) => {
         const normalizedBudgets = data.budgets.map(withDefaultItemUnit);
-        setClients(data.clients); setServices(data.services); setSaved(normalizedBudgets); setAppSettings(data.settings); setParts(data.parts);
-        if (normalizedBudgets.length) setBudget(createNextBudget(normalizedBudgets));
+        setClients(data.clients);
+        setServices(data.services);
+        setSaved(normalizedBudgets);
+        setAppSettings(data.settings);
+        setParts(data.parts);
+        if (normalizedBudgets.length)
+          setBudget(createNextBudget(normalizedBudgets));
       })
       .catch((error: Error) => setDatabaseError(error.message))
       .finally(() => setDatabaseLoading(false));
@@ -87,7 +135,11 @@ export function BudgetApplication() {
   const updateClient = (field: keyof Budget["client"], value: string) =>
     setBudget((old) => ({ ...old, client: { ...old.client, [field]: value } }));
 
-  const updateItem = (id: string, field: keyof Item, value: string | number) => {
+  const updateItem = (
+    id: string,
+    field: keyof Item,
+    value: string | number,
+  ) => {
     let nextValue = value;
     const selectedItem = budget.items.find((item) => item.id === id);
     if (field === "quantity" && selectedItem?.partId) {
@@ -96,10 +148,16 @@ export function BudgetApplication() {
         const usedInOtherLines = budget.items
           .filter((item) => item.id !== id && item.partId === part.id)
           .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-        const availableForLine = Math.max(0, part.stockQuantity - usedInOtherLines);
+        const availableForLine = Math.max(
+          0,
+          part.stockQuantity - usedInOtherLines,
+        );
         if (Number(value) > availableForLine) {
           nextValue = availableForLine;
-          notify(`Estoque insuficiente para ${part.description}. Disponível neste orçamento: ${availableForLine} un.`, "error");
+          notify(
+            `Estoque insuficiente para ${part.description}. Disponível neste orçamento: ${availableForLine} un.`,
+            "error",
+          );
         }
       }
     }
@@ -146,53 +204,133 @@ export function BudgetApplication() {
   };
 
   const fillServiceByCode = (itemId: string, code: string) => {
-    const service = services.find((item) => item.code.toLowerCase() === code.trim().toLowerCase() || item.id === code.trim());
-    const part = parts.find((item) => item.code.toLowerCase() === code.trim().toLowerCase() || item.id === code.trim());
-    if (part && part.stockQuantity <= 0) return notify(`${part.description} está indisponível no estoque`);
-    const alreadyUsed = part ? budget.items
-        .filter((item) => item.id !== itemId && item.partId === part.id)
-        .reduce((sum, item) => sum + Number(item.quantity || 0), 0) : 0;
+    const service = services.find(
+      (item) =>
+        item.code.toLowerCase() === code.trim().toLowerCase() ||
+        item.id === code.trim(),
+    );
+    const part = parts.find(
+      (item) =>
+        item.code.toLowerCase() === code.trim().toLowerCase() ||
+        item.id === code.trim(),
+    );
+    if (part && part.stockQuantity <= 0)
+      return notify(`${part.description} está indisponível no estoque`);
+    const alreadyUsed = part
+      ? budget.items
+          .filter((item) => item.id !== itemId && item.partId === part.id)
+          .reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+      : 0;
     if (part) {
-      if (alreadyUsed >= part.stockQuantity) return notify(`Todo o estoque de ${part.description} já está neste orçamento`);
+      if (alreadyUsed >= part.stockQuantity)
+        return notify(
+          `Todo o estoque de ${part.description} já está neste orçamento`,
+        );
     }
     setBudget((old) => ({
-      ...old, items: old.items.map((item) => item.id !== itemId ? item : service ? {
-        ...item,
-        serviceId: service.id, partId: "",
-        serviceCode: service.code,
-        description: service.description,
-        unit: "un.",
-        unitPrice: service.unitPrice,
-      } : part ? {
-        ...item, serviceId: "", partId: part.id, serviceCode: part.code,
-        description: part.description,
-        quantity: Math.min(Math.max(Number(item.quantity) || 1, 1), part.stockQuantity - alreadyUsed),
-        unit: "un.", unitPrice: part.unitPrice,
-      } : { ...item, serviceId: "", partId: "", serviceCode: code }),
+      ...old,
+      items: old.items.map((item) =>
+        item.id !== itemId
+          ? item
+          : service
+            ? {
+                ...item,
+                serviceId: service.id,
+                partId: "",
+                serviceCode: service.code,
+                description: service.description,
+                unit: "un.",
+                unitPrice: service.unitPrice,
+              }
+            : part
+              ? {
+                  ...item,
+                  serviceId: "",
+                  partId: part.id,
+                  serviceCode: part.code,
+                  description: part.description,
+                  quantity: Math.min(
+                    Math.max(Number(item.quantity) || 1, 1),
+                    part.stockQuantity - alreadyUsed,
+                  ),
+                  unit: "un.",
+                  unitPrice: part.unitPrice,
+                }
+              : { ...item, serviceId: "", partId: "", serviceCode: code },
+      ),
     }));
   };
 
   const registerClient = async () => {
     if (!clientDraft.name.trim()) return notify("Informe o nome do cliente");
     try {
-      const current = await saveClientToDatabase({ ...clientDraft, id: clientDraft.id || crypto.randomUUID() });
-      setClients([current, ...clients.filter((item) => item.id !== current.id)]);
-      setClientDraft({ id: "", name: "", document: "", phone: "", email: "", contact: "", address: "", city: "", state: "CE", cep: "" });
+      const current = await saveClientToDatabase({
+        ...clientDraft,
+        id: clientDraft.id || crypto.randomUUID(),
+      });
+      setClients([
+        current,
+        ...clients.filter((item) => item.id !== current.id),
+      ]);
+      setClientDraft({
+        id: "",
+        name: "",
+        document: "",
+        phone: "",
+        email: "",
+        contact: "",
+        address: "",
+        city: "",
+        state: "CE",
+        cep: "",
+      });
       notify("Cliente salvo no banco");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
 
   const registerService = async () => {
-    if (!serviceDraft.code.trim() || !serviceDraft.description.trim()) return notify("Informe o código e o serviço");
-    if (services.some((item) => item.code.toLowerCase() === serviceDraft.code.toLowerCase() && item.id !== serviceDraft.id)) return notify("Este código já está cadastrado");
-    if (parts.some((item) => item.code.toLowerCase() === serviceDraft.code.toLowerCase())) return notify("Este código já pertence a uma peça do estoque");
+    if (!serviceDraft.code.trim() || !serviceDraft.description.trim())
+      return notify("Informe o código e o serviço");
+    if (
+      services.some(
+        (item) =>
+          item.code.toLowerCase() === serviceDraft.code.toLowerCase() &&
+          item.id !== serviceDraft.id,
+      )
+    )
+      return notify("Este código já está cadastrado");
+    if (
+      parts.some(
+        (item) => item.code.toLowerCase() === serviceDraft.code.toLowerCase(),
+      )
+    )
+      return notify("Este código já pertence a uma peça do estoque");
     const isEditing = Boolean(serviceDraft.id);
     try {
-      const current = await saveServiceToDatabase({ ...serviceDraft, unit: "un.", id: serviceDraft.id || crypto.randomUUID() });
-      setServices([current, ...services.filter((item) => item.id !== current.id)]);
-      setServiceDraft({ id: "", code: "", description: "", unit: "un.", unitPrice: 0 });
-      notify(isEditing ? "Serviço atualizado no banco" : "Serviço salvo no banco");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+      const current = await saveServiceToDatabase({
+        ...serviceDraft,
+        unit: "un.",
+        id: serviceDraft.id || crypto.randomUUID(),
+      });
+      setServices([
+        current,
+        ...services.filter((item) => item.id !== current.id),
+      ]);
+      setServiceDraft({
+        id: "",
+        code: "",
+        description: "",
+        unit: "un.",
+        unitPrice: 0,
+      });
+      notify(
+        isEditing ? "Serviço atualizado no banco" : "Serviço salvo no banco",
+      );
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
 
   const editService = (service: Service) => {
@@ -201,32 +339,71 @@ export function BudgetApplication() {
   };
 
   const clearServiceDraft = () => {
-    setServiceDraft({ id: "", code: "", description: "", unit: "un.", unitPrice: 0 });
+    setServiceDraft({
+      id: "",
+      code: "",
+      description: "",
+      unit: "un.",
+      unitPrice: 0,
+    });
   };
 
-  const clearPartDraft = () => setPartDraft({ id: "", code: "", description: "", stockQuantity: 0, unitPrice: 0 });
+  const clearPartDraft = () =>
+    setPartDraft({
+      id: "",
+      code: "",
+      description: "",
+      stockQuantity: 0,
+      unitPrice: 0,
+    });
 
   const registerPart = async () => {
-    if (!partDraft.code.trim() || !partDraft.description.trim()) return notify("Informe o código e a peça");
-    if (partDraft.stockQuantity < 0 || partDraft.unitPrice < 0) return notify("Quantidade e valor não podem ser negativos");
-    if (parts.some((item) => item.code.toLowerCase() === partDraft.code.toLowerCase() && item.id !== partDraft.id)) return notify("Este código já está cadastrado");
-    if (services.some((item) => item.code.toLowerCase() === partDraft.code.toLowerCase())) return notify("Este código já pertence a um serviço");
+    if (!partDraft.code.trim() || !partDraft.description.trim())
+      return notify("Informe o código e a peça");
+    if (partDraft.stockQuantity < 0 || partDraft.unitPrice < 0)
+      return notify("Quantidade e valor não podem ser negativos");
+    if (
+      parts.some(
+        (item) =>
+          item.code.toLowerCase() === partDraft.code.toLowerCase() &&
+          item.id !== partDraft.id,
+      )
+    )
+      return notify("Este código já está cadastrado");
+    if (
+      services.some(
+        (item) => item.code.toLowerCase() === partDraft.code.toLowerCase(),
+      )
+    )
+      return notify("Este código já pertence a um serviço");
     try {
-      const current = await savePartToDatabase({ ...partDraft, id: partDraft.id || crypto.randomUUID() });
+      const current = await savePartToDatabase({
+        ...partDraft,
+        id: partDraft.id || crypto.randomUUID(),
+      });
       setParts([current, ...parts.filter((item) => item.id !== current.id)]);
       clearPartDraft();
-      notify(partDraft.id ? "Peça atualizada no estoque" : "Peça adicionada ao estoque");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+      notify(
+        partDraft.id
+          ? "Peça atualizada no estoque"
+          : "Peça adicionada ao estoque",
+      );
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
 
   const removePart = async (part: Part) => {
-    if (!window.confirm(`Excluir a peça ${part.code} — ${part.description}?`)) return;
+    if (!window.confirm(`Excluir a peça ${part.code} — ${part.description}?`))
+      return;
     try {
       await deletePartFromDatabase(part.id);
       setParts(parts.filter((item) => item.id !== part.id));
       if (partDraft.id === part.id) clearPartDraft();
       notify("Peça excluída do estoque");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
 
   const addPartToBudget = (part: Part) => {
@@ -234,29 +411,64 @@ export function BudgetApplication() {
     const alreadyUsed = budget.items
       .filter((item) => item.partId === part.id)
       .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-    if (alreadyUsed >= part.stockQuantity) return notify(`Todo o estoque de ${part.description} já está neste orçamento`);
+    if (alreadyUsed >= part.stockQuantity)
+      return notify(
+        `Todo o estoque de ${part.description} já está neste orçamento`,
+      );
     setBudget((current) => {
-      const base = ["Aprovado", "Pago", "Recusado"].includes(current.status) ? createNextBudget(saved) : current;
-      const emptyOnly = base.items.length === 1 && !base.items[0].description.trim() && !base.items[0].serviceCode;
-      const partItem: Item = { id: crypto.randomUUID(), serviceId: "", partId: part.id, serviceCode: part.code, description: part.description, quantity: 1, unit: "un.", unitPrice: part.unitPrice };
-      return { ...base, items: emptyOnly ? [partItem] : [...base.items, partItem] };
+      const base = ["Aprovado", "Pago", "Recusado"].includes(current.status)
+        ? createNextBudget(saved)
+        : current;
+      const emptyOnly =
+        base.items.length === 1 &&
+        !base.items[0].description.trim() &&
+        !base.items[0].serviceCode;
+      const partItem: Item = {
+        id: crypto.randomUUID(),
+        serviceId: "",
+        partId: part.id,
+        serviceCode: part.code,
+        description: part.description,
+        quantity: 1,
+        unit: "un.",
+        unitPrice: part.unitPrice,
+      };
+      return {
+        ...base,
+        items: emptyOnly ? [partItem] : [...base.items, partItem],
+      };
     });
-    setPreview(false); setTab("new");
+    setPreview(false);
+    setTab("new");
     notify(`${part.description} adicionada ao orçamento`);
   };
 
   const addServiceToBudget = (service: Service) => {
     setBudget((current) => {
-      const base = ["Aprovado", "Pago", "Recusado"].includes(current.status) ? createNextBudget(saved) : current;
-      const emptyOnly = base.items.length === 1 && !base.items[0].description.trim() && !base.items[0].serviceCode;
+      const base = ["Aprovado", "Pago", "Recusado"].includes(current.status)
+        ? createNextBudget(saved)
+        : current;
+      const emptyOnly =
+        base.items.length === 1 &&
+        !base.items[0].description.trim() &&
+        !base.items[0].serviceCode;
       const serviceItem: Item = {
-        id: crypto.randomUUID(), serviceId: service.id, partId: "",
-        serviceCode: service.code, description: service.description,
-        quantity: 1, unit: "un.", unitPrice: service.unitPrice,
+        id: crypto.randomUUID(),
+        serviceId: service.id,
+        partId: "",
+        serviceCode: service.code,
+        description: service.description,
+        quantity: 1,
+        unit: "un.",
+        unitPrice: service.unitPrice,
       };
-      return { ...base, items: emptyOnly ? [serviceItem] : [...base.items, serviceItem] };
+      return {
+        ...base,
+        items: emptyOnly ? [serviceItem] : [...base.items, serviceItem],
+      };
     });
-    setPreview(false); setTab("new");
+    setPreview(false);
+    setTab("new");
     notify(`${service.description} adicionada ao orçamento`);
   };
 
@@ -265,50 +477,87 @@ export function BudgetApplication() {
 
   const chooseLogo = (file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) return notify("Selecione uma imagem válida");
-    if (file.size > 2 * 1024 * 1024) return notify("A logo deve ter no máximo 2 MB");
+    if (!file.type.startsWith("image/"))
+      return notify("Selecione uma imagem válida");
+    if (file.size > 2 * 1024 * 1024)
+      return notify("A logo deve ter no máximo 2 MB");
     const reader = new FileReader();
-    reader.onload = () => updateAppSetting("logoDataUrl", String(reader.result || ""));
+    reader.onload = () =>
+      updateAppSetting("logoDataUrl", String(reader.result || ""));
     reader.onerror = () => notify("Não foi possível carregar a logo");
     reader.readAsDataURL(file);
   };
 
   const saveAppSettings = async () => {
-    if (!appSettings.companyName.trim() || !appSettings.appName.trim() || !appSettings.segment.trim()) return notify("Preencha os nomes da marca");
+    if (
+      !appSettings.companyName.trim() ||
+      !appSettings.appName.trim() ||
+      !appSettings.segment.trim()
+    )
+      return notify("Preencha os nomes da marca");
     try {
       const savedSettings = await saveAppSettingsToDatabase(appSettings);
       setAppSettings(savedSettings);
       notify("Configurações da marca salvas");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
 
   const brandLogo = appSettings.logoDataUrl || "/logo-placeholder.svg";
-  const brandInitials = appSettings.companyName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "LOGO";
+  const brandInitials =
+    appSettings.companyName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "LOGO";
 
   const advanceStatus = async (nextStatus: Budget["status"]) => {
-    if (!getAllowedNextStatuses(budget.status).includes(nextStatus)) return notify("Mudança de status não permitida");
-    const stockError = nextStatus === "Aprovado" ? stockValidationError(budget) : "";
-    if (stockError) return notify(`Estoque insuficiente: ${stockError}`, "error");
+    if (!getAllowedNextStatuses(budget.status).includes(nextStatus))
+      return notify("Mudança de status não permitida");
+    const stockError =
+      nextStatus === "Aprovado" ? stockValidationError(budget) : "";
+    if (stockError)
+      return notify(`Estoque insuficiente: ${stockError}`, "error");
     try {
-      const updated = nextStatus === "Aprovado"
-        ? await approveBudgetAndDeductStock(withDefaultItemUnit(budget))
-        : await saveBudgetToDatabase({ ...budget, status: nextStatus });
-      setBudget(updated); setSaved([updated, ...saved.filter((item) => item.id !== updated.id)]);
+      const updated =
+        nextStatus === "Aprovado"
+          ? await approveBudgetAndDeductStock(withDefaultItemUnit(budget))
+          : await saveBudgetToDatabase({ ...budget, status: nextStatus });
+      setBudget(updated);
+      setSaved([updated, ...saved.filter((item) => item.id !== updated.id)]);
       if (nextStatus === "Aprovado") setParts(await loadPartsFromDatabase());
       notify(`Status alterado para ${nextStatus}`);
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
 
   const removeService = async (service: Service) => {
-    if (!window.confirm(`Excluir o serviço ${service.code} — ${service.description}?`)) return;
+    if (
+      !window.confirm(
+        `Excluir o serviço ${service.code} — ${service.description}?`,
+      )
+    )
+      return;
     try {
       await deleteServiceFromDatabase(service.id);
       setServices(services.filter((item) => item.id !== service.id));
-      if (serviceDraft.id === service.id) setServiceDraft({ id: "", code: "", description: "", unit: "un.", unitPrice: 0 });
+      if (serviceDraft.id === service.id)
+        setServiceDraft({
+          id: "",
+          code: "",
+          description: "",
+          unit: "un.",
+          unitPrice: 0,
+        });
       notify("Serviço excluído do banco");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
-
 
   const downloadServicesPdf = async () => {
     const element = document.getElementById("service-pdf");
@@ -316,20 +565,32 @@ export function BudgetApplication() {
     notify("Gerando planilha em PDF...");
     element.classList.add("is-exporting");
     try {
-      const pdf = await createBudgetPdf(element, `planilha-servicos-${new Date().toISOString().slice(0, 10)}.pdf`);
+      const pdf = await createBudgetPdf(
+        element,
+        `planilha-servicos-${new Date().toISOString().slice(0, 10)}.pdf`,
+      );
       await pdf.download();
       notify("Planilha baixada em PDF");
-    } finally { element.classList.remove("is-exporting"); }
+    } finally {
+      element.classList.remove("is-exporting");
+    }
   };
 
   const saveBudget = async () => {
     const stockError = stockValidationError(budget);
-    if (stockError) return notify(`Não foi possível salvar. Estoque insuficiente: ${stockError}`, "error");
+    if (stockError)
+      return notify(
+        `Não foi possível salvar. Estoque insuficiente: ${stockError}`,
+        "error",
+      );
     try {
       const current = await saveBudgetToDatabase(withDefaultItemUnit(budget));
-      setBudget(current); setSaved([current, ...saved.filter((item) => item.id !== current.id)]);
+      setBudget(current);
+      setSaved([current, ...saved.filter((item) => item.id !== current.id)]);
       notify("Orçamento salvo no banco");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
 
   const newBudget = () => {
@@ -354,14 +615,21 @@ export function BudgetApplication() {
     try {
       await deleteBudgetFromDatabase(item.id);
       const next = saved.filter((savedItem) => savedItem.id !== item.id);
-      setSaved(next); await deletePdf(item.id);
+      setSaved(next);
+      await deletePdf(item.id);
       notify("Orçamento e PDF excluídos");
-    } catch (error) { notify(`Erro: ${(error as Error).message}`); }
+    } catch (error) {
+      notify(`Erro: ${(error as Error).message}`);
+    }
   };
 
   const generateAndStorePdf = async () => {
     const stockError = stockValidationError(budget);
-    if (stockError) return notify(`Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`, "error");
+    if (stockError)
+      return notify(
+        `Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`,
+        "error",
+      );
     const element = document.getElementById("budget-pdf");
     if (!element) return;
     notify("Gerando PDF...");
@@ -397,11 +665,39 @@ export function BudgetApplication() {
     setHistoryVisibleCount(10);
   };
 
-  if (databaseLoading) return <div className="auth-loading"><img src="/logo-placeholder.svg" alt="Logo" /><span>Carregando dados do banco...</span></div>;
+  if (databaseLoading)
+    return (
+      <div className="auth-loading">
+        <img src="/logo-placeholder.svg" alt="Logo" />
+        <span>Carregando dados do banco...</span>
+      </div>
+    );
 
-  if (databaseError) return (
-    <main className="database-error-page"><section className="login-card"><div className="login-brand"><img src="/logo-placeholder.svg" alt="Logo" /><div><strong>Erro ao acessar o banco</strong><span>Confira a configuração do Supabase</span></div></div><div className="login-error">{databaseError}</div><p>Confirme se as tabelas foram criadas, se o RLS possui as políticas indicadas e se as variáveis do arquivo .env estão corretas.</p><button className="button primary" onClick={() => window.location.reload()}>Tentar novamente</button></section></main>
-  );
+  if (databaseError)
+    return (
+      <main className="database-error-page">
+        <section className="login-card">
+          <div className="login-brand">
+            <img src="/logo-placeholder.svg" alt="Logo" />
+            <div>
+              <strong>Erro ao acessar o banco</strong>
+              <span>Confira a configuração do Supabase</span>
+            </div>
+          </div>
+          <div className="login-error">{databaseError}</div>
+          <p>
+            Confirme se as tabelas foram criadas, se o RLS possui as políticas
+            indicadas e se as variáveis do arquivo .env estão corretas.
+          </p>
+          <button
+            className="button primary"
+            onClick={() => window.location.reload()}
+          >
+            Tentar novamente
+          </button>
+        </section>
+      </main>
+    );
 
   return (
     <div className="app-shell">
@@ -414,10 +710,7 @@ export function BudgetApplication() {
           </div>
         </div>
         <nav>
-          <button
-            className={tab === "new" ? "active" : ""}
-            onClick={newBudget}
-          >
+          <button className={tab === "new" ? "active" : ""} onClick={newBudget}>
             <i>＋</i>Novo orçamento
           </button>
           <button
@@ -426,16 +719,28 @@ export function BudgetApplication() {
           >
             <i>▤</i>Orçamentos
           </button>
-          <button className={tab === "clients" ? "active" : ""} onClick={() => setTab("clients")}>
+          <button
+            className={tab === "clients" ? "active" : ""}
+            onClick={() => setTab("clients")}
+          >
             <i>♙</i>Clientes
           </button>
-          <button className={tab === "services" ? "active" : ""} onClick={() => setTab("services")}>
+          <button
+            className={tab === "services" ? "active" : ""}
+            onClick={() => setTab("services")}
+          >
             <i>▦</i>Serviços
           </button>
-          <button className={tab === "stock" ? "active" : ""} onClick={() => setTab("stock")}>
+          <button
+            className={tab === "stock" ? "active" : ""}
+            onClick={() => setTab("stock")}
+          >
             <i>▣</i>Estoque
           </button>
-          <button className={tab === "billing" ? "active" : ""} onClick={() => setTab("billing")}>
+          <button
+            className={tab === "billing" ? "active" : ""}
+            onClick={() => setTab("billing")}
+          >
             <i>R$</i>Mensalidade
           </button>
           <button
@@ -456,7 +761,13 @@ export function BudgetApplication() {
             <strong>{appSettings.companyName}</strong>
             <small>Administrador</small>
           </div>
-          <button className="logout-button" title="Sair" onClick={() => void supabase.auth.signOut({ scope: "local" })}>↪</button>
+          <button
+            className="logout-button"
+            title="Sair"
+            onClick={() => void supabase.auth.signOut({ scope: "local" })}
+          >
+            ↪
+          </button>
         </div>
       </aside>
 
@@ -469,22 +780,32 @@ export function BudgetApplication() {
                 ? preview
                   ? "Pré-visualização"
                   : "Novo orçamento"
-                : tab === "saved" ? "Orçamentos"
-                : tab === "clients" ? "Clientes"
-                : tab === "services" ? "Catálogo de serviços"
-                : tab === "stock" ? "Estoque de peças"
-                : tab === "billing" ? "Mensalidade"
-                : "Configurações"}
+                : tab === "saved"
+                  ? "Orçamentos"
+                  : tab === "clients"
+                    ? "Clientes"
+                    : tab === "services"
+                      ? "Catálogo de serviços"
+                      : tab === "stock"
+                        ? "Estoque de peças"
+                        : tab === "billing"
+                          ? "Mensalidade"
+                          : "Configurações"}
             </h1>
             <p>
               {tab === "new"
                 ? "Preencha os dados e gere uma proposta profissional."
-                : tab === "saved" ? "Consulte e gerencie suas propostas comerciais."
-                : tab === "clients" ? "Cadastre os clientes que serão usados nos orçamentos."
-                : tab === "services" ? "Cadastre códigos, descrições e valores para preenchimento automático."
-                : tab === "stock" ? "Cadastre peças para venda e adicione-as aos orçamentos."
-                : tab === "billing" ? "Acompanhe vencimentos, pagamentos e faturas da assinatura."
-                : "Personalize os dados exibidos nos orçamentos."}
+                : tab === "saved"
+                  ? "Consulte e gerencie suas propostas comerciais."
+                  : tab === "clients"
+                    ? "Cadastre os clientes que serão usados nos orçamentos."
+                    : tab === "services"
+                      ? "Cadastre códigos, descrições e valores para preenchimento automático."
+                      : tab === "stock"
+                        ? "Cadastre peças para venda e adicione-as aos orçamentos."
+                        : tab === "billing"
+                          ? "Acompanhe vencimentos, pagamentos e faturas da assinatura."
+                          : "Personalize os dados exibidos nos orçamentos."}
             </p>
           </div>
           {tab === "saved" && (
@@ -526,9 +847,19 @@ export function BudgetApplication() {
                 </label>
                 <label>
                   Validade
-                  <SmoothSelect ariaLabel="Validade" value={String(budget.validDays)} onChange={(value) => setBudget({ ...budget, validDays: Number(value) })} options={[
-                    { value: "5", label: "5 dias" }, { value: "10", label: "10 dias" }, { value: "15", label: "15 dias" }, { value: "30", label: "30 dias" },
-                  ]} />
+                  <SmoothSelect
+                    ariaLabel="Validade"
+                    value={String(budget.validDays)}
+                    onChange={(value) =>
+                      setBudget({ ...budget, validDays: Number(value) })
+                    }
+                    options={[
+                      { value: "5", label: "5 dias" },
+                      { value: "10", label: "10 dias" },
+                      { value: "15", label: "15 dias" },
+                      { value: "30", label: "30 dias" },
+                    ]}
+                  />
                 </label>
               </div>
             </section>
@@ -544,10 +875,18 @@ export function BudgetApplication() {
               <div className="form-grid">
                 <label className="full">
                   Selecionar cliente cadastrado
-                  <SmoothSelect ariaLabel="Selecionar cliente" value={budget.client.id || ""} onChange={selectClient} options={[
-                    { value: "", label: "Preencher manualmente" },
-                    ...clients.map((client) => ({ value: client.id, label: `${client.name} · ${client.document || "sem documento"}` })),
-                  ]} />
+                  <SmoothSelect
+                    ariaLabel="Selecionar cliente"
+                    value={budget.client.id || ""}
+                    onChange={selectClient}
+                    options={[
+                      { value: "", label: "Preencher manualmente" },
+                      ...clients.map((client) => ({
+                        value: client.id,
+                        label: `${client.name} · ${client.document || "sem documento"}`,
+                      })),
+                    ]}
+                  />
                 </label>
                 <label className="wide">
                   Nome / Razão social
@@ -655,7 +994,9 @@ export function BudgetApplication() {
                       list="item-codes"
                       placeholder="Código"
                       value={item.serviceCode || ""}
-                      onChange={(e) => fillServiceByCode(item.id, e.target.value)}
+                      onChange={(e) =>
+                        fillServiceByCode(item.id, e.target.value)
+                      }
                     />
                     <div className="description-field">
                       <b>{String(index + 1).padStart(2, "0")}</b>
@@ -675,7 +1016,12 @@ export function BudgetApplication() {
                         updateItem(item.id, "quantity", Number(e.target.value))
                       }
                     />
-                    <input value="un." readOnly aria-label="Unidade do item" title="A unidade padrão dos itens é un." />
+                    <input
+                      value="un."
+                      readOnly
+                      aria-label="Unidade do item"
+                      title="A unidade padrão dos itens é un."
+                    />
                     <div className="money-input">
                       <span>R$</span>
                       <input
@@ -709,8 +1055,18 @@ export function BudgetApplication() {
                   </div>
                 ))}
                 <datalist id="item-codes">
-                  {services.map((service) => <option key={`service-${service.id}`} value={service.code}>Mão de obra · {service.description}</option>)}
-                  {parts.filter((part) => part.stockQuantity > 0).map((part) => <option key={`part-${part.id}`} value={part.code}>Peça · {part.description} · estoque {part.stockQuantity}</option>)}
+                  {services.map((service) => (
+                    <option key={`service-${service.id}`} value={service.code}>
+                      Mão de obra · {service.description}
+                    </option>
+                  ))}
+                  {parts
+                    .filter((part) => part.stockQuantity > 0)
+                    .map((part) => (
+                      <option key={`part-${part.id}`} value={part.code}>
+                        Peça · {part.description} · estoque {part.stockQuantity}
+                      </option>
+                    ))}
                 </datalist>
               </div>
               <div className="total-box">
@@ -730,9 +1086,31 @@ export function BudgetApplication() {
               <div className="form-grid">
                 <label>
                   Condição de pagamento
-                  <SmoothSelect className="payment-method-select" ariaLabel="Condição de pagamento" value={["Depósito", "PIX", "Boleto", "Transferência"].includes(budget.payment) ? budget.payment : ""} onChange={(value) => setBudget({ ...budget, payment: value })} options={[
-                    { value: "", label: "Selecione a forma de pagamento", disabled: true }, { value: "Depósito", label: "Depósito" }, { value: "PIX", label: "PIX" }, { value: "Boleto", label: "Boleto" }, { value: "Transferência", label: "Transferência" },
-                  ]} />
+                  <SmoothSelect
+                    className="payment-method-select"
+                    ariaLabel="Condição de pagamento"
+                    value={
+                      ["Depósito", "PIX", "Boleto", "Transferência"].includes(
+                        budget.payment,
+                      )
+                        ? budget.payment
+                        : ""
+                    }
+                    onChange={(value) =>
+                      setBudget({ ...budget, payment: value })
+                    }
+                    options={[
+                      {
+                        value: "",
+                        label: "Selecione a forma de pagamento",
+                        disabled: true,
+                      },
+                      { value: "Depósito", label: "Depósito" },
+                      { value: "PIX", label: "PIX" },
+                      { value: "Boleto", label: "Boleto" },
+                      { value: "Transferência", label: "Transferência" },
+                    ]}
+                  />
                 </label>
                 <label>
                   Status
@@ -740,13 +1118,30 @@ export function BudgetApplication() {
                 </label>
                 <div className="status-actions full">
                   <span>Próxima etapa</span>
-                  {getAllowedNextStatuses(budget.status).filter((status) => status !== "Recusado").map((status) => (
-                    <button key={status} className="button primary" onClick={() => advanceStatus(status)}>Avançar para {status}</button>
-                  ))}
-                  {getAllowedNextStatuses(budget.status).includes("Recusado") && (
-                    <button className="button danger" onClick={() => advanceStatus("Recusado")}>Marcar como recusado</button>
+                  {getAllowedNextStatuses(budget.status)
+                    .filter((status) => status !== "Recusado")
+                    .map((status) => (
+                      <button
+                        key={status}
+                        className="button primary"
+                        onClick={() => advanceStatus(status)}
+                      >
+                        Avançar para {status}
+                      </button>
+                    ))}
+                  {getAllowedNextStatuses(budget.status).includes(
+                    "Recusado",
+                  ) && (
+                    <button
+                      className="button danger"
+                      onClick={() => advanceStatus("Recusado")}
+                    >
+                      Marcar como recusado
+                    </button>
                   )}
-                  {getAllowedNextStatuses(budget.status).length === 0 && <strong>Status final: {budget.status}</strong>}
+                  {getAllowedNextStatuses(budget.status).length === 0 && (
+                    <strong>Status final: {budget.status}</strong>
+                  )}
                 </div>
                 <label className="full">
                   Observações
@@ -770,12 +1165,20 @@ export function BudgetApplication() {
               className={`paper ${budget.items.length > 12 ? "paper-ultra" : budget.items.length > 7 ? "paper-dense" : ""}`}
             >
               <div className="paper-head">
-                <img src={brandLogo} alt={`Logo de ${appSettings.companyName}`} />
+                <img
+                  src={brandLogo}
+                  alt={`Logo de ${appSettings.companyName}`}
+                />
                 <div>
                   <h2>{appSettings.companyName.toUpperCase()}</h2>
                   <p>{appSettings.address || "Endereço não informado"}</p>
                   <p>{appSettings.phone || "Telefone não informado"}</p>
-                  <p>{appSettings.document ? `CNPJ/CPF ${appSettings.document}` : "Documento não informado"} · {appSettings.email || "E-mail não informado"}</p>
+                  <p>
+                    {appSettings.document
+                      ? `CNPJ/CPF ${appSettings.document}`
+                      : "Documento não informado"}{" "}
+                    · {appSettings.email || "E-mail não informado"}
+                  </p>
                 </div>
                 <div className="paper-number">
                   <span>ORÇAMENTO DE SERVIÇOS E PEÇAS</span>
@@ -833,7 +1236,17 @@ export function BudgetApplication() {
                   {budget.items.map((item, index) => (
                     <tr key={item.id}>
                       <td>{String(index + 1).padStart(2, "0")}</td>
-                      <td><span className={`paper-item-type ${item.partId ? "part" : item.serviceId ? "service" : "manual"}`}>{item.partId ? "Peça" : item.serviceId ? "Mão de obra" : "Item manual"}</span></td>
+                      <td>
+                        <span
+                          className={`paper-item-type ${item.partId ? "part" : item.serviceId ? "service" : "manual"}`}
+                        >
+                          {item.partId
+                            ? "Peça"
+                            : item.serviceId
+                              ? "Mão de obra"
+                              : "Item manual"}
+                        </span>
+                      </td>
                       <td>{item.description || "Item ou serviço"}</td>
                       <td>{item.quantity}</td>
                       <td>un.</td>
@@ -880,10 +1293,21 @@ export function BudgetApplication() {
         {tab === "new" && (
           <div className="budget-bottom-actions card">
             <div>
-              <strong>{preview ? "Pré-visualização do orçamento" : "Orçamento pronto?"}</strong>
-              <span>{preview ? "Confira o documento antes de salvar ou baixar o PDF." : "Visualize o documento ou salve os dados no Supabase."}</span>
+              <strong>
+                {preview
+                  ? "Pré-visualização do orçamento"
+                  : "Orçamento pronto?"}
+              </strong>
+              <span>
+                {preview
+                  ? "Confira o documento antes de salvar ou baixar o PDF."
+                  : "Antes de baixar e salvar , visualize o documento e veja se está correto!"}
+              </span>
             </div>
-            <button className="button ghost" onClick={() => setPreview(!preview)}>
+            <button
+              className="button ghost"
+              onClick={() => setPreview(!preview)}
+            >
               {preview ? "← Voltar para edição" : "◉ Visualizar"}
             </button>
             <button className="button primary" onClick={saveBudget}>
@@ -934,7 +1358,14 @@ export function BudgetApplication() {
                   setStatusFilter(value);
                   setHistoryVisibleCount(10);
                 }}
-                options={["Todos", "Enviado", "Recusado", "Em andamento", "Aprovado", "Pago"].map((value) => ({ value, label: value }))}
+                options={[
+                  "Todos",
+                  "Enviado",
+                  "Recusado",
+                  "Em andamento",
+                  "Aprovado",
+                  "Pago",
+                ].map((value) => ({ value, label: value }))}
               />
               <SmoothSelect
                 ariaLabel="Filtrar por período"
@@ -943,7 +1374,12 @@ export function BudgetApplication() {
                   setPeriodFilter(value);
                   setHistoryVisibleCount(10);
                 }}
-                options={[{ value: "Todos", label: "Todo o período" }, { value: "7", label: "Últimos 7 dias" }, { value: "30", label: "Últimos 30 dias" }, { value: "90", label: "Últimos 90 dias" }]}
+                options={[
+                  { value: "Todos", label: "Todo o período" },
+                  { value: "7", label: "Últimos 7 dias" },
+                  { value: "30", label: "Últimos 30 dias" },
+                  { value: "90", label: "Últimos 90 dias" },
+                ]}
               />
               <button className="clear-filter" onClick={clearFilters}>
                 Limpar filtros
@@ -1013,9 +1449,26 @@ export function BudgetApplication() {
             </div>
             {filtered.length > 10 && (
               <div className="load-controls">
-                <span>Exibindo {Math.min(historyVisibleCount, filtered.length)} de {filtered.length}</span>
-                {historyVisibleCount > 10 && <button className="button ghost" onClick={() => setHistoryVisibleCount(10)}>← Voltar para 10</button>}
-                {historyVisibleCount < filtered.length && <button className="button primary" onClick={() => setHistoryVisibleCount((count) => count + 5)}>Carregar mais 5</button>}
+                <span>
+                  Exibindo {Math.min(historyVisibleCount, filtered.length)} de{" "}
+                  {filtered.length}
+                </span>
+                {historyVisibleCount > 10 && (
+                  <button
+                    className="button ghost"
+                    onClick={() => setHistoryVisibleCount(10)}
+                  >
+                    ← Voltar para 10
+                  </button>
+                )}
+                {historyVisibleCount < filtered.length && (
+                  <button
+                    className="button primary"
+                    onClick={() => setHistoryVisibleCount((count) => count + 5)}
+                  >
+                    Carregar mais 5
+                  </button>
+                )}
               </div>
             )}
           </section>
@@ -1024,80 +1477,487 @@ export function BudgetApplication() {
         {tab === "clients" && (
           <section className="registry-layout">
             <div className="card registry-form">
-              <div className="section-title"><span>01</span><div><h2>Cadastro de cliente</h2><p>Dados armazenados para reutilização</p></div></div>
-              <div className="form-grid">
-                <label className="wide">Nome / Razão social<input value={clientDraft.name} onChange={(e) => setClientDraft({ ...clientDraft, name: e.target.value })} /></label>
-                <label>CPF / CNPJ<input value={clientDraft.document} onChange={(e) => setClientDraft({ ...clientDraft, document: e.target.value })} /></label>
-                <label>Telefone<input value={clientDraft.phone} onChange={(e) => setClientDraft({ ...clientDraft, phone: e.target.value })} /></label>
-                <label>E-mail<input value={clientDraft.email} onChange={(e) => setClientDraft({ ...clientDraft, email: e.target.value })} /></label>
-                <label>Contato<input value={clientDraft.contact} onChange={(e) => setClientDraft({ ...clientDraft, contact: e.target.value })} /></label>
-                <label className="wide">Endereço<input value={clientDraft.address} onChange={(e) => setClientDraft({ ...clientDraft, address: e.target.value })} /></label>
-                <label>Cidade<input value={clientDraft.city} onChange={(e) => setClientDraft({ ...clientDraft, city: e.target.value })} /></label>
-                <label>UF<input maxLength={2} value={clientDraft.state} onChange={(e) => setClientDraft({ ...clientDraft, state: e.target.value.toUpperCase() })} /></label>
-                <label>CEP<input value={clientDraft.cep} onChange={(e) => setClientDraft({ ...clientDraft, cep: e.target.value })} /></label>
+              <div className="section-title">
+                <span>01</span>
+                <div>
+                  <h2>Cadastro de cliente</h2>
+                  <p>Dados armazenados para reutilização</p>
+                </div>
               </div>
-              <button className="button primary registry-save" onClick={registerClient}>Salvar cliente</button>
+              <div className="form-grid">
+                <label className="wide">
+                  Nome / Razão social
+                  <input
+                    value={clientDraft.name}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, name: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  CPF / CNPJ
+                  <input
+                    value={clientDraft.document}
+                    onChange={(e) =>
+                      setClientDraft({
+                        ...clientDraft,
+                        document: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Telefone
+                  <input
+                    value={clientDraft.phone}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, phone: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  E-mail
+                  <input
+                    value={clientDraft.email}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, email: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Contato
+                  <input
+                    value={clientDraft.contact}
+                    onChange={(e) =>
+                      setClientDraft({
+                        ...clientDraft,
+                        contact: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="wide">
+                  Endereço
+                  <input
+                    value={clientDraft.address}
+                    onChange={(e) =>
+                      setClientDraft({
+                        ...clientDraft,
+                        address: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Cidade
+                  <input
+                    value={clientDraft.city}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, city: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  UF
+                  <input
+                    maxLength={2}
+                    value={clientDraft.state}
+                    onChange={(e) =>
+                      setClientDraft({
+                        ...clientDraft,
+                        state: e.target.value.toUpperCase(),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  CEP
+                  <input
+                    value={clientDraft.cep}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, cep: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              <button
+                className="button primary registry-save"
+                onClick={registerClient}
+              >
+                Salvar cliente
+              </button>
             </div>
             <div className="card registry-list">
               <h2>Clientes cadastrados</h2>
-              {clients.map((client) => <div className="registry-row" key={client.id}><div><strong>{client.name}</strong><small>{client.document || "Sem documento"} · {client.phone || "Sem telefone"}</small></div><button onClick={() => setClientDraft(client)}>Editar</button></div>)}
-              {!clients.length && <p className="registry-empty">Nenhum cliente cadastrado.</p>}
+              {clients.map((client) => (
+                <div className="registry-row" key={client.id}>
+                  <div>
+                    <strong>{client.name}</strong>
+                    <small>
+                      {client.document || "Sem documento"} ·{" "}
+                      {client.phone || "Sem telefone"}
+                    </small>
+                  </div>
+                  <button onClick={() => setClientDraft(client)}>Editar</button>
+                </div>
+              ))}
+              {!clients.length && (
+                <p className="registry-empty">Nenhum cliente cadastrado.</p>
+              )}
             </div>
           </section>
         )}
 
         {tab === "services" && (
           <section className="registry-layout">
-            <div id="service-form" tabIndex={-1} className={`card registry-form service-form-card ${serviceDraft.id ? "is-editing" : ""}`}>
-              <div className="section-title"><span>02</span><div><h2>{serviceDraft.id ? "Editar serviço" : "Cadastro de serviço"}</h2><p>{serviceDraft.id ? `Altere os dados de ${serviceDraft.code} e clique em Atualizar serviço` : "Esta tabela será ligada aos IDs do backend"}</p></div></div>
-              {serviceDraft.id && <div className="editing-service-notice"><strong>✎ Modo de edição ativo</strong><span>Você está editando o serviço {serviceDraft.code}.</span></div>}
+            <div
+              id="service-form"
+              tabIndex={-1}
+              className={`card registry-form service-form-card ${serviceDraft.id ? "is-editing" : ""}`}
+            >
+              <div className="section-title">
+                <span>02</span>
+                <div>
+                  <h2>
+                    {serviceDraft.id ? "Editar serviço" : "Cadastro de serviço"}
+                  </h2>
+                  <p>
+                    {serviceDraft.id
+                      ? `Altere os dados de ${serviceDraft.code} e clique em Atualizar serviço`
+                      : "Esta tabela será ligada aos IDs do backend"}
+                  </p>
+                </div>
+              </div>
+              {serviceDraft.id && (
+                <div className="editing-service-notice">
+                  <strong>✎ Modo de edição ativo</strong>
+                  <span>Você está editando o serviço {serviceDraft.code}.</span>
+                </div>
+              )}
               <div className="form-grid">
-                <label>Código<input placeholder="Ex.: SRV-001" value={serviceDraft.code} onChange={(e) => setServiceDraft({ ...serviceDraft, code: e.target.value.toUpperCase() })} /></label>
-                <label className="wide">Serviço<input value={serviceDraft.description} onChange={(e) => setServiceDraft({ ...serviceDraft, description: e.target.value })} /></label>
-                <label>Unidade<input value="un." readOnly aria-label="Unidade do serviço" /></label>
-                <label>Valor<input type="number" min="0" step=".01" value={serviceDraft.unitPrice || ""} onChange={(e) => setServiceDraft({ ...serviceDraft, unitPrice: Number(e.target.value) })} /></label>
+                <label>
+                  Código
+                  <input
+                    placeholder="Ex.: SRV-001"
+                    value={serviceDraft.code}
+                    onChange={(e) =>
+                      setServiceDraft({
+                        ...serviceDraft,
+                        code: e.target.value.toUpperCase(),
+                      })
+                    }
+                  />
+                </label>
+                <label className="wide">
+                  Serviço
+                  <input
+                    value={serviceDraft.description}
+                    onChange={(e) =>
+                      setServiceDraft({
+                        ...serviceDraft,
+                        description: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Unidade
+                  <input value="un." readOnly aria-label="Unidade do serviço" />
+                </label>
+                <label>
+                  Valor
+                  <input
+                    type="number"
+                    min="0"
+                    step=".01"
+                    value={serviceDraft.unitPrice || ""}
+                    onChange={(e) =>
+                      setServiceDraft({
+                        ...serviceDraft,
+                        unitPrice: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
               </div>
               <div className="service-form-actions">
-                <button className="button primary registry-save" onClick={registerService}>{serviceDraft.id ? "✓ Atualizar serviço" : "Salvar serviço"}</button>
-                {serviceDraft.id && <button className="button ghost registry-save" onClick={clearServiceDraft}>Cancelar edição</button>}
+                <button
+                  className="button primary registry-save"
+                  onClick={registerService}
+                >
+                  {serviceDraft.id ? "✓ Atualizar serviço" : "Salvar serviço"}
+                </button>
+                {serviceDraft.id && (
+                  <button
+                    className="button ghost registry-save"
+                    onClick={clearServiceDraft}
+                  >
+                    Cancelar edição
+                  </button>
+                )}
               </div>
             </div>
             <div className="card registry-list">
-              <div className="registry-title"><h2>Planilha de serviços</h2><div className="registry-actions"><button className="button ghost" disabled={!services.length} onClick={downloadServicesPdf}>↧ Gerar PDF</button><button className="button soft" onClick={() => { clearServiceDraft(); document.getElementById("service-form")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>＋ Adicionar serviço</button></div></div>
+              <div className="registry-title">
+                <h2>Planilha de serviços</h2>
+                <div className="registry-actions">
+                  <button
+                    className="button ghost"
+                    disabled={!services.length}
+                    onClick={downloadServicesPdf}
+                  >
+                    ↧ Gerar PDF
+                  </button>
+                  <button
+                    className="button soft"
+                    onClick={() => {
+                      clearServiceDraft();
+                      document.getElementById("service-form")?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                    }}
+                  >
+                    ＋ Adicionar serviço
+                  </button>
+                </div>
+              </div>
               <div id="service-pdf" className="services-paper">
-                <div className="services-paper-head"><img src={brandLogo} alt={`Logo de ${appSettings.companyName}`} /><div><h2>PLANILHA DE SERVIÇOS</h2><p>{appSettings.companyName} · Emitida em {new Date().toLocaleDateString("pt-BR")}</p></div></div>
-                <div className="service-head pdf-service-head"><span>Código</span><span>Serviço</span><span>Unidade</span><span>Valor</span><span className="service-actions-label">Ações</span></div>
-                {services.map((service) => <div className={`service-row pdf-service-row ${serviceDraft.id === service.id ? "is-being-edited" : ""}`} key={service.id}><code>{service.code}</code><div><strong>{service.description}</strong></div><span>{service.unit}</span><b>{money(service.unitPrice)}</b><div className="service-actions"><button className="add-to-budget" onClick={() => addServiceToBudget(service)}>＋ Orçamento</button><button onClick={() => editService(service)}>{serviceDraft.id === service.id ? "Editando..." : "Editar"}</button><button className="delete-service" onClick={() => removeService(service)}>Excluir</button></div></div>)}
+                <div className="services-paper-head">
+                  <img
+                    src={brandLogo}
+                    alt={`Logo de ${appSettings.companyName}`}
+                  />
+                  <div>
+                    <h2>PLANILHA DE SERVIÇOS</h2>
+                    <p>
+                      {appSettings.companyName} · Emitida em{" "}
+                      {new Date().toLocaleDateString("pt-BR")}
+                    </p>
+                  </div>
+                </div>
+                <div className="service-head pdf-service-head">
+                  <span>Código</span>
+                  <span>Serviço</span>
+                  <span>Unidade</span>
+                  <span>Valor</span>
+                  <span className="service-actions-label">Ações</span>
+                </div>
+                {services.map((service) => (
+                  <div
+                    className={`service-row pdf-service-row ${serviceDraft.id === service.id ? "is-being-edited" : ""}`}
+                    key={service.id}
+                  >
+                    <code>{service.code}</code>
+                    <div>
+                      <strong>{service.description}</strong>
+                    </div>
+                    <span>{service.unit}</span>
+                    <b>{money(service.unitPrice)}</b>
+                    <div className="service-actions">
+                      <button
+                        className="add-to-budget"
+                        onClick={() => addServiceToBudget(service)}
+                      >
+                        ＋ Orçamento
+                      </button>
+                      <button onClick={() => editService(service)}>
+                        {serviceDraft.id === service.id
+                          ? "Editando..."
+                          : "Editar"}
+                      </button>
+                      <button
+                        className="delete-service"
+                        onClick={() => removeService(service)}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </div>
+                ))}
                 <footer>{services.length} serviço(s) cadastrado(s)</footer>
               </div>
-              {!services.length && <p className="registry-empty">Cadastre um serviço para usar o preenchimento automático.</p>}
+              {!services.length && (
+                <p className="registry-empty">
+                  Cadastre um serviço para usar o preenchimento automático.
+                </p>
+              )}
             </div>
           </section>
         )}
 
         {tab === "stock" && (
           <section className="registry-layout stock-layout">
-            <div className={`card registry-form ${partDraft.id ? "is-editing" : ""}`}>
-              <div className="section-title"><span>▣</span><div><h2>{partDraft.id ? "Editar peça" : "Adicionar peça ao estoque"}</h2><p>Cadastre peças disponíveis para venda nos orçamentos</p></div></div>
-              {partDraft.id && <div className="editing-service-notice"><strong>✎ Modo de edição ativo</strong><span>Atualize os dados de {partDraft.code}.</span></div>}
+            <div
+              className={`card registry-form ${partDraft.id ? "is-editing" : ""}`}
+            >
+              <div className="section-title">
+                <span>▣</span>
+                <div>
+                  <h2>
+                    {partDraft.id ? "Editar peça" : "Adicionar peça ao estoque"}
+                  </h2>
+                  <p>Cadastre peças disponíveis para venda nos orçamentos</p>
+                </div>
+              </div>
+              {partDraft.id && (
+                <div className="editing-service-notice">
+                  <strong>✎ Modo de edição ativo</strong>
+                  <span>Atualize os dados de {partDraft.code}.</span>
+                </div>
+              )}
               <div className="form-grid">
-                <label>Código<input placeholder="Ex.: PEC-001" value={partDraft.code} onChange={(event) => setPartDraft({ ...partDraft, code: event.target.value.toUpperCase() })} /></label>
-                <label className="wide">Peça<input placeholder="Nome ou descrição da peça" value={partDraft.description} onChange={(event) => setPartDraft({ ...partDraft, description: event.target.value })} /></label>
-                <label>Quantidade em estoque<input type="number" min="0" step="1" value={partDraft.stockQuantity || ""} onChange={(event) => setPartDraft({ ...partDraft, stockQuantity: Number(event.target.value) })} /></label>
-                <label>Valor de venda<input type="number" min="0" step=".01" value={partDraft.unitPrice || ""} onChange={(event) => setPartDraft({ ...partDraft, unitPrice: Number(event.target.value) })} /></label>
+                <label>
+                  Código
+                  <input
+                    placeholder="Ex.: PEC-001"
+                    value={partDraft.code}
+                    onChange={(event) =>
+                      setPartDraft({
+                        ...partDraft,
+                        code: event.target.value.toUpperCase(),
+                      })
+                    }
+                  />
+                </label>
+                <label className="wide">
+                  Peça
+                  <input
+                    placeholder="Nome ou descrição da peça"
+                    value={partDraft.description}
+                    onChange={(event) =>
+                      setPartDraft({
+                        ...partDraft,
+                        description: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Quantidade em estoque
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={partDraft.stockQuantity || ""}
+                    onChange={(event) =>
+                      setPartDraft({
+                        ...partDraft,
+                        stockQuantity: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Valor de venda
+                  <input
+                    type="number"
+                    min="0"
+                    step=".01"
+                    value={partDraft.unitPrice || ""}
+                    onChange={(event) =>
+                      setPartDraft({
+                        ...partDraft,
+                        unitPrice: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
               </div>
               <div className="service-form-actions">
-                <button className="button primary registry-save" onClick={registerPart}>{partDraft.id ? "✓ Atualizar peça" : "＋ Salvar peça"}</button>
-                {partDraft.id && <button className="button ghost registry-save" onClick={clearPartDraft}>Cancelar edição</button>}
+                <button
+                  className="button primary registry-save"
+                  onClick={registerPart}
+                >
+                  {partDraft.id ? "✓ Atualizar peça" : "＋ Salvar peça"}
+                </button>
+                {partDraft.id && (
+                  <button
+                    className="button ghost registry-save"
+                    onClick={clearPartDraft}
+                  >
+                    Cancelar edição
+                  </button>
+                )}
               </div>
             </div>
             <div className="card registry-list">
-              <div className="registry-title"><div><h2>Peças cadastradas</h2><p className="stock-subtitle">A baixa ocorre somente quando o orçamento é aprovado.</p></div><button className="button soft" onClick={clearPartDraft}>＋ Nova peça</button></div>
-              <div className="stock-summary"><div><span>Peças cadastradas</span><strong>{parts.length}</strong></div><div><span>Disponíveis</span><strong>{parts.filter((part) => part.stockQuantity > 0).length}</strong></div><div><span>Indisponíveis</span><strong>{parts.filter((part) => part.stockQuantity <= 0).length}</strong></div></div>
+              <div className="registry-title">
+                <div>
+                  <h2>Peças cadastradas</h2>
+                  <p className="stock-subtitle">
+                    A baixa ocorre somente quando o orçamento é aprovado.
+                  </p>
+                </div>
+                <button className="button soft" onClick={clearPartDraft}>
+                  ＋ Nova peça
+                </button>
+              </div>
+              <div className="stock-summary">
+                <div>
+                  <span>Peças cadastradas</span>
+                  <strong>{parts.length}</strong>
+                </div>
+                <div>
+                  <span>Disponíveis</span>
+                  <strong>
+                    {parts.filter((part) => part.stockQuantity > 0).length}
+                  </strong>
+                </div>
+                <div>
+                  <span>Indisponíveis</span>
+                  <strong>
+                    {parts.filter((part) => part.stockQuantity <= 0).length}
+                  </strong>
+                </div>
+              </div>
               <div className="stock-table">
-                <div className="stock-head"><span>Código</span><span>Peça</span><span>Estoque</span><span>Valor de venda</span><span>Situação</span><span>Ações</span></div>
-                {parts.map((part) => <div className={`stock-row ${part.stockQuantity <= 0 ? "out-of-stock" : ""}`} key={part.id}><code>{part.code}</code><strong>{part.description}</strong><b>{part.stockQuantity} un.</b><span>{money(part.unitPrice)}</span><em className={`stock-status ${part.stockQuantity > 0 ? "available" : "unavailable"}`}>{part.stockQuantity > 0 ? "Disponível" : "Indisponível"}</em><div className="stock-actions"><button className="add-to-budget" disabled={part.stockQuantity <= 0} onClick={() => addPartToBudget(part)}>＋ Orçamento</button><button onClick={() => setPartDraft(part)}>Editar</button><button className="delete-service" onClick={() => removePart(part)}>Excluir</button></div></div>)}
-                {!parts.length && <div className="empty-history"><strong>Nenhuma peça cadastrada</strong><span>Adicione a primeira peça ao estoque.</span></div>}
+                <div className="stock-head">
+                  <span>Código</span>
+                  <span>Peça</span>
+                  <span>Estoque</span>
+                  <span>Valor de venda</span>
+                  <span>Situação</span>
+                  <span>Ações</span>
+                </div>
+                {parts.map((part) => (
+                  <div
+                    className={`stock-row ${part.stockQuantity <= 0 ? "out-of-stock" : ""}`}
+                    key={part.id}
+                  >
+                    <code>{part.code}</code>
+                    <strong>{part.description}</strong>
+                    <b>{part.stockQuantity} un.</b>
+                    <span>{money(part.unitPrice)}</span>
+                    <em
+                      className={`stock-status ${part.stockQuantity > 0 ? "available" : "unavailable"}`}
+                    >
+                      {part.stockQuantity > 0 ? "Disponível" : "Indisponível"}
+                    </em>
+                    <div className="stock-actions">
+                      <button
+                        className="add-to-budget"
+                        disabled={part.stockQuantity <= 0}
+                        onClick={() => addPartToBudget(part)}
+                      >
+                        ＋ Orçamento
+                      </button>
+                      <button onClick={() => setPartDraft(part)}>Editar</button>
+                      <button
+                        className="delete-service"
+                        onClick={() => removePart(part)}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {!parts.length && (
+                  <div className="empty-history">
+                    <strong>Nenhuma peça cadastrada</strong>
+                    <span>Adicione a primeira peça ao estoque.</span>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -1121,61 +1981,119 @@ export function BudgetApplication() {
                 </div>
               </div>
               <div className="logo-upload">
-                <img src={brandLogo} alt={`Logo de ${appSettings.companyName}`} />
+                <img
+                  src={brandLogo}
+                  alt={`Logo de ${appSettings.companyName}`}
+                />
                 <div>
                   <strong>Logotipo da empresa</strong>
-                  <p>{appSettings.logoDataUrl ? "Logo personalizada aplicada ao sistema e aos PDFs." : "Esta é a logo padrão. Troque pela logo da sua marca."}</p>
-                  <input ref={logoInputRef} className="logo-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => chooseLogo(event.target.files?.[0])} />
+                  <p>
+                    {appSettings.logoDataUrl
+                      ? "Logo personalizada aplicada ao sistema e aos PDFs."
+                      : "Esta é a logo padrão. Troque pela logo da sua marca."}
+                  </p>
+                  <input
+                    ref={logoInputRef}
+                    className="logo-file-input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={(event) => chooseLogo(event.target.files?.[0])}
+                  />
                   <button
                     className="button ghost"
                     onClick={() => logoInputRef.current?.click()}
                   >
-                    {appSettings.logoDataUrl ? "Alterar logotipo" : "Escolher minha logo"}
+                    {appSettings.logoDataUrl
+                      ? "Alterar logotipo"
+                      : "Escolher minha logo"}
                   </button>
-                  {appSettings.logoDataUrl && <button className="button danger remove-logo-button" onClick={() => updateAppSetting("logoDataUrl", "")}>Usar logo padrão</button>}
+                  {appSettings.logoDataUrl && (
+                    <button
+                      className="button danger remove-logo-button"
+                      onClick={() => updateAppSetting("logoDataUrl", "")}
+                    >
+                      Usar logo padrão
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="form-grid">
                 <label>
                   Nome da empresa
-                  <input value={appSettings.companyName} onChange={(event) => updateAppSetting("companyName", event.target.value)} />
+                  <input
+                    value={appSettings.companyName}
+                    onChange={(event) =>
+                      updateAppSetting("companyName", event.target.value)
+                    }
+                  />
                 </label>
                 <label>
                   Nome do sistema
-                  <input value={appSettings.appName} onChange={(event) => updateAppSetting("appName", event.target.value)} />
+                  <input
+                    value={appSettings.appName}
+                    onChange={(event) =>
+                      updateAppSetting("appName", event.target.value)
+                    }
+                  />
                 </label>
                 <label>
                   Segmento
-                  <input value={appSettings.segment} onChange={(event) => updateAppSetting("segment", event.target.value)} />
+                  <input
+                    value={appSettings.segment}
+                    onChange={(event) =>
+                      updateAppSetting("segment", event.target.value)
+                    }
+                  />
                 </label>
                 <label>
                   CNPJ
-                  <input value={appSettings.document} onChange={(event) => updateAppSetting("document", event.target.value)} />
+                  <input
+                    value={appSettings.document}
+                    onChange={(event) =>
+                      updateAppSetting("document", event.target.value)
+                    }
+                  />
                 </label>
                 <label>
                   Telefone
-                  <input value={appSettings.phone} onChange={(event) => updateAppSetting("phone", event.target.value)} />
+                  <input
+                    value={appSettings.phone}
+                    onChange={(event) =>
+                      updateAppSetting("phone", event.target.value)
+                    }
+                  />
                 </label>
                 <label>
                   E-mail
-                  <input value={appSettings.email} onChange={(event) => updateAppSetting("email", event.target.value)} />
+                  <input
+                    value={appSettings.email}
+                    onChange={(event) =>
+                      updateAppSetting("email", event.target.value)
+                    }
+                  />
                 </label>
                 <label className="full">
                   Endereço
-                  <input value={appSettings.address} onChange={(event) => updateAppSetting("address", event.target.value)} />
+                  <input
+                    value={appSettings.address}
+                    onChange={(event) =>
+                      updateAppSetting("address", event.target.value)
+                    }
+                  />
                 </label>
               </div>
-              <button
-                className="button primary"
-                onClick={saveAppSettings}
-              >
+              <button className="button primary" onClick={saveAppSettings}>
                 Salvar alterações
               </button>
             </div>
           </section>
         )}
       </main>
-      {toast && <div className={`toast ${toast.type}`}>{toast.type === "error" ? "!" : "✓"} {toast.text}</div>}
+      {toast && (
+        <div className={`toast ${toast.type}`}>
+          {toast.type === "error" ? "!" : "✓"} {toast.text}
+        </div>
+      )}
     </div>
   );
 }
