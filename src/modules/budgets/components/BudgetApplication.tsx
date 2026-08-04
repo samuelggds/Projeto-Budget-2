@@ -25,6 +25,7 @@ import {
   loadDatabase,
   loadEmployeesFromDatabase,
   loadNextBudgetNumber,
+  loadPaymentHistoryFromDatabase,
   loadPartsFromDatabase,
   loadSuppliersFromDatabase,
   saveAppSettingsToDatabase,
@@ -33,6 +34,7 @@ import {
   savePartToDatabase,
   saveServiceToDatabase,
   saveEmployeeToDatabase,
+  markPayeePaymentAsPaid,
   saveSupplierToDatabase,
 } from "../../shared/services/supabaseDatabase";
 import { SmoothSelect } from "../../shared/components/SmoothSelect";
@@ -46,6 +48,7 @@ import { useAppRole } from "../../auth/context/appAccessContext";
 import { PasswordInput } from "../../shared/components/PasswordInput";
 import type { Supplier } from "../../suppliers/types/Supplier";
 import type { Employee } from "../../employees/types/Employee";
+import type { PaymentHistory, PayeeType } from "../../payments/types/PaymentHistory";
 
 const withDefaultItemUnit = (current: Budget): Budget => ({
   ...current,
@@ -98,7 +101,7 @@ const hasValidPixKey = (value: string) => {
   return key.length >= 8 && key.length <= 77 && !/\s/.test(key);
 };
 
-type PaymentRegistration = Pick<Supplier, "name" | "document" | "phone" | "paymentMethod" | "pixKey" | "paymentDate">;
+type PaymentRegistration = Pick<Supplier, "name" | "document" | "phone" | "paymentMethod" | "pixKey" | "paymentDate" | "paymentAmount">;
 
 function validatePaymentRegistration(data: PaymentRegistration, label: string) {
   if (data.name.trim().length < 3) return `Informe um nome válido para ${label}`;
@@ -107,8 +110,16 @@ function validatePaymentRegistration(data: PaymentRegistration, label: string) {
   if (!data.paymentMethod) return "Selecione a forma de pagamento";
   if (!hasValidPixKey(data.pixKey)) return "Informe uma chave Pix válida";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.paymentDate)) return "Informe a data de pagamento";
+  if (!Number.isFinite(data.paymentAmount) || data.paymentAmount <= 0) return "Informe um valor mensal maior que zero";
   return "";
 }
+
+const daysUntilPayment = (date: string) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(`${date}T00:00:00`);
+  return Math.ceil((due.getTime() - today.getTime()) / 86_400_000);
+};
 
 export function BudgetApplication() {
   const appRole = useAppRole();
@@ -165,6 +176,8 @@ export function BudgetApplication() {
     paymentMethod: "PIX",
     pixKey: "",
     paymentDate: "",
+    paymentAmount: 0,
+    nextPaymentDate: "",
   });
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
@@ -176,6 +189,8 @@ export function BudgetApplication() {
     paymentMethod: "PIX",
     pixKey: "",
     paymentDate: "",
+    paymentAmount: 0,
+    nextPaymentDate: "",
   });
   const [partDraft, setPartDraft] = useState<Part>({
     id: "",
@@ -184,6 +199,7 @@ export function BudgetApplication() {
     stockQuantity: 0,
     unitPrice: 0,
   });
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([]);
   const [settingsSection, setSettingsSection] = useState<"company" | "password" | "email">("company");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -216,6 +232,14 @@ export function BudgetApplication() {
         .some((value) => value.toLocaleLowerCase("pt-BR").includes(query)),
     );
   }, [employeeSearch, employees]);
+  const supplierPaymentAlerts = useMemo(
+    () => suppliers.filter((item) => item.nextPaymentDate && daysUntilPayment(item.nextPaymentDate) <= 3),
+    [suppliers],
+  );
+  const employeePaymentAlerts = useMemo(
+    () => employees.filter((item) => item.nextPaymentDate && daysUntilPayment(item.nextPaymentDate) <= 3),
+    [employees],
+  );
 
   useEffect(() => {
     loadDatabase()
@@ -233,6 +257,11 @@ export function BudgetApplication() {
       })
       .catch((error: Error) => setDatabaseError(error.message))
       .finally(() => setDatabaseLoading(false));
+  }, [isEmployee]);
+
+  useEffect(() => {
+    if (isEmployee) return;
+    void loadPaymentHistoryFromDatabase().then(setPaymentHistory).catch(() => undefined);
   }, [isEmployee]);
 
   useEffect(() => {
@@ -458,6 +487,8 @@ export function BudgetApplication() {
     paymentMethod: "PIX",
     pixKey: "",
     paymentDate: "",
+    paymentAmount: 0,
+    nextPaymentDate: "",
   });
 
   const registerSupplier = async () => {
@@ -499,6 +530,8 @@ export function BudgetApplication() {
     paymentMethod: "PIX",
     pixKey: "",
     paymentDate: "",
+    paymentAmount: 0,
+    nextPaymentDate: "",
   });
 
   const registerEmployee = async () => {
@@ -529,6 +562,33 @@ export function BudgetApplication() {
       notify("Funcionário excluído");
     } catch (error) {
       notify(`Erro ao excluir funcionário: ${(error as Error).message}`, "error");
+    }
+  };
+
+  const confirmPayeePayment = async (payeeType: PayeeType, payeeId: string) => {
+    if (!window.confirm("Confirmar que este pagamento foi realizado?")) return;
+    try {
+      await markPayeePaymentAsPaid(payeeType, payeeId);
+      const [currentSuppliers, currentEmployees, currentHistory] = await Promise.all([
+        loadSuppliersFromDatabase(),
+        loadEmployeesFromDatabase(),
+        loadPaymentHistoryFromDatabase(),
+      ]);
+      setSuppliers(currentSuppliers);
+      setEmployees(currentEmployees);
+      setPaymentHistory(currentHistory);
+      notify("Pagamento confirmado e próximo vencimento calculado");
+    } catch (error) {
+      notify(`Erro ao confirmar pagamento: ${(error as Error).message}`, "error");
+    }
+  };
+
+  const copyPixKey = async (pixKey: string) => {
+    try {
+      await navigator.clipboard.writeText(pixKey);
+      notify("Chave Pix copiada");
+    } catch {
+      notify("Não foi possível copiar a chave Pix", "error");
     }
   };
 
@@ -2379,6 +2439,25 @@ export function BudgetApplication() {
 
         {tab === "suppliers" && !isEmployee && (
           <section className="registry-layout supplier-layout">
+            {supplierPaymentAlerts.length > 0 && <div className="payment-alerts full-registry-width">
+              <div className="payment-alert-title">
+                <div><strong>Pagamentos de fornecedores</strong><span>Vencendo nos próximos 3 dias ou atrasados</span></div>
+                <em>{supplierPaymentAlerts.length}</em>
+              </div>
+              {supplierPaymentAlerts.map((supplier) => {
+                const days = daysUntilPayment(supplier.nextPaymentDate);
+                return <div className={`payment-alert-row ${days < 0 ? "overdue" : "due-soon"}`} key={supplier.id}>
+                  <div><strong>{supplier.name}</strong><span>{days < 0 ? `${Math.abs(days)} dia(s) em atraso` : days === 0 ? "Vence hoje" : `Vence em ${days} dia(s)`}</span></div>
+                  <div><span>Valor</span><strong>{money(supplier.paymentAmount)}</strong></div>
+                  <div><span>Vencimento</span><strong>{new Date(`${supplier.nextPaymentDate}T12:00:00`).toLocaleDateString("pt-BR")}</strong></div>
+                  <div className="payment-pix"><span>Chave Pix</span><strong title={supplier.pixKey}>{supplier.pixKey}</strong></div>
+                  <div className="payment-alert-actions">
+                    <button className="button ghost" onClick={() => void copyPixKey(supplier.pixKey)}>Copiar Pix</button>
+                    <button className="button primary" onClick={() => void confirmPayeePayment("SUPPLIER", supplier.id)}>Marcar como pago</button>
+                  </div>
+                </div>;
+              })}
+            </div>}
             <div className={`card registry-form ${supplierDraft.id ? "is-editing" : ""}`}>
               <div className="section-title">
                 <span>01</span>
@@ -2450,6 +2529,17 @@ export function BudgetApplication() {
                     onChange={(event) => setSupplierDraft({ ...supplierDraft, paymentDate: event.target.value })}
                   />
                 </label>
+                <label>
+                  Valor mensal
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="0,00"
+                    value={supplierDraft.paymentAmount || ""}
+                    onChange={(event) => setSupplierDraft({ ...supplierDraft, paymentAmount: Number(event.target.value) })}
+                  />
+                </label>
               </div>
               <div className="service-form-actions">
                 <button className="button primary registry-save" onClick={registerSupplier}>
@@ -2487,7 +2577,8 @@ export function BudgetApplication() {
                   <span>Telefone</span>
                   <span>Pagamento</span>
                   <span>Chave Pix</span>
-                  <span>Data</span>
+                  <span>Valor</span>
+                  <span>Próximo vencimento</span>
                   <span>Ações</span>
                 </div>
                 {filteredSuppliers.map((supplier) => (
@@ -2497,8 +2588,9 @@ export function BudgetApplication() {
                     <span>{supplier.phone || "—"}</span>
                     <span>{supplier.paymentMethod || "—"}</span>
                     <span className="supplier-pix" title={supplier.pixKey}>{supplier.pixKey || "—"}</span>
-                    <span>{supplier.paymentDate
-                      ? new Date(`${supplier.paymentDate}T12:00:00`).toLocaleDateString("pt-BR")
+                    <span>{money(supplier.paymentAmount)}</span>
+                    <span>{supplier.nextPaymentDate
+                      ? new Date(`${supplier.nextPaymentDate}T12:00:00`).toLocaleDateString("pt-BR")
                       : "—"}</span>
                     <div className="supplier-actions">
                       <button onClick={() => {
@@ -2516,12 +2608,43 @@ export function BudgetApplication() {
                   </div>
                 )}
               </div>
+              <div className="payment-history-block">
+                <h3>Histórico de pagamentos</h3>
+                {paymentHistory.filter((item) => item.payeeType === "SUPPLIER").slice(0, 10).map((item) => (
+                  <div className="payment-history-row" key={item.id}>
+                    <strong>{item.payeeName}</strong>
+                    <span>{money(item.amount)}</span>
+                    <span>Vencimento: {new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}</span>
+                    <span>Pago em: {new Date(item.paidAt).toLocaleString("pt-BR")}</span>
+                  </div>
+                ))}
+                {!paymentHistory.some((item) => item.payeeType === "SUPPLIER") && <p className="registry-empty">Nenhum pagamento confirmado.</p>}
+              </div>
             </div>
           </section>
         )}
 
         {tab === "employees" && !isEmployee && (
           <section className="registry-layout supplier-layout">
+            {employeePaymentAlerts.length > 0 && <div className="payment-alerts full-registry-width">
+              <div className="payment-alert-title">
+                <div><strong>Pagamentos de funcionários</strong><span>Vencendo nos próximos 3 dias ou atrasados</span></div>
+                <em>{employeePaymentAlerts.length}</em>
+              </div>
+              {employeePaymentAlerts.map((employee) => {
+                const days = daysUntilPayment(employee.nextPaymentDate);
+                return <div className={`payment-alert-row ${days < 0 ? "overdue" : "due-soon"}`} key={employee.id}>
+                  <div><strong>{employee.name}</strong><span>{days < 0 ? `${Math.abs(days)} dia(s) em atraso` : days === 0 ? "Vence hoje" : `Vence em ${days} dia(s)`}</span></div>
+                  <div><span>Valor</span><strong>{money(employee.paymentAmount)}</strong></div>
+                  <div><span>Vencimento</span><strong>{new Date(`${employee.nextPaymentDate}T12:00:00`).toLocaleDateString("pt-BR")}</strong></div>
+                  <div className="payment-pix"><span>Chave Pix</span><strong title={employee.pixKey}>{employee.pixKey}</strong></div>
+                  <div className="payment-alert-actions">
+                    <button className="button ghost" onClick={() => void copyPixKey(employee.pixKey)}>Copiar Pix</button>
+                    <button className="button primary" onClick={() => void confirmPayeePayment("EMPLOYEE", employee.id)}>Marcar como pago</button>
+                  </div>
+                </div>;
+              })}
+            </div>}
             <div className={`card registry-form ${employeeDraft.id ? "is-editing" : ""}`}>
               <div className="section-title">
                 <span>01</span>
@@ -2592,6 +2715,17 @@ export function BudgetApplication() {
                     onChange={(event) => setEmployeeDraft({ ...employeeDraft, paymentDate: event.target.value })}
                   />
                 </label>
+                <label>
+                  Valor mensal
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="0,00"
+                    value={employeeDraft.paymentAmount || ""}
+                    onChange={(event) => setEmployeeDraft({ ...employeeDraft, paymentAmount: Number(event.target.value) })}
+                  />
+                </label>
               </div>
               <div className="service-form-actions">
                 <button className="button primary registry-save" onClick={registerEmployee}>
@@ -2629,7 +2763,8 @@ export function BudgetApplication() {
                   <span>Telefone</span>
                   <span>Pagamento</span>
                   <span>Chave Pix</span>
-                  <span>Data</span>
+                  <span>Valor</span>
+                  <span>Próximo vencimento</span>
                   <span>Ações</span>
                 </div>
                 {filteredEmployees.map((employee) => (
@@ -2639,8 +2774,9 @@ export function BudgetApplication() {
                     <span>{employee.phone || "—"}</span>
                     <span>{employee.paymentMethod || "—"}</span>
                     <span className="supplier-pix" title={employee.pixKey}>{employee.pixKey || "—"}</span>
-                    <span>{employee.paymentDate
-                      ? new Date(`${employee.paymentDate}T12:00:00`).toLocaleDateString("pt-BR")
+                    <span>{money(employee.paymentAmount)}</span>
+                    <span>{employee.nextPaymentDate
+                      ? new Date(`${employee.nextPaymentDate}T12:00:00`).toLocaleDateString("pt-BR")
                       : "—"}</span>
                     <div className="supplier-actions">
                       <button onClick={() => {
@@ -2657,6 +2793,18 @@ export function BudgetApplication() {
                     <span>{employeeSearch ? "Altere os termos da pesquisa." : "Cadastre o primeiro funcionário."}</span>
                   </div>
                 )}
+              </div>
+              <div className="payment-history-block">
+                <h3>Histórico de pagamentos</h3>
+                {paymentHistory.filter((item) => item.payeeType === "EMPLOYEE").slice(0, 10).map((item) => (
+                  <div className="payment-history-row" key={item.id}>
+                    <strong>{item.payeeName}</strong>
+                    <span>{money(item.amount)}</span>
+                    <span>Vencimento: {new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}</span>
+                    <span>Pago em: {new Date(item.paidAt).toLocaleString("pt-BR")}</span>
+                  </div>
+                ))}
+                {!paymentHistory.some((item) => item.payeeType === "EMPLOYEE") && <p className="registry-empty">Nenhum pagamento confirmado.</p>}
               </div>
             </div>
           </section>

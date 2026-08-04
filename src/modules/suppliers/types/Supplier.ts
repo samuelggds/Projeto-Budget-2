@@ -6,6 +6,9 @@ export interface Supplier {
   paymentMethod: string;
   pixKey: string;
   paymentDate: string;
+  paymentAmount: number;
+  nextPaymentDate: string;
+  lastPaidAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }

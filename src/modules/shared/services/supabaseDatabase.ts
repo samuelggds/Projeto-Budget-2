@@ -7,6 +7,7 @@ import { DEFAULT_APP_SETTINGS } from "../../settings/types/AppSettings";
 import type { Part } from "../../stock/types/Part";
 import type { Supplier } from "../../suppliers/types/Supplier";
 import type { Employee } from "../../employees/types/Employee";
+import type { PaymentHistory, PayeeType } from "../../payments/types/PaymentHistory";
 
 type DatabaseStatus = "ENVIADO" | "RECUSADO" | "EM_ANDAMENTO" | "APROVADO" | "PAGO";
 
@@ -71,6 +72,9 @@ function mapSupplier(row: Record<string, unknown>): Supplier {
     paymentMethod: text(row.payment_method),
     pixKey: text(row.pix_key),
     paymentDate: text(row.payment_date),
+    paymentAmount: number(row.payment_amount),
+    nextPaymentDate: text(row.next_payment_date),
+    lastPaidAt: text(row.last_paid_at) || undefined,
     createdAt: text(row.created_at),
     updatedAt: text(row.updated_at),
   };
@@ -85,6 +89,9 @@ function mapEmployee(row: Record<string, unknown>): Employee {
     paymentMethod: text(row.payment_method),
     pixKey: text(row.pix_key),
     paymentDate: text(row.payment_date),
+    paymentAmount: number(row.payment_amount),
+    nextPaymentDate: text(row.next_payment_date),
+    lastPaidAt: text(row.last_paid_at) || undefined,
     createdAt: text(row.created_at),
     updatedAt: text(row.updated_at),
   };
@@ -180,6 +187,8 @@ export async function saveSupplierToDatabase(supplier: Supplier) {
     payment_method: supplier.paymentMethod || null,
     pix_key: supplier.pixKey.trim() || null,
     payment_date: supplier.paymentDate || null,
+    payment_amount: supplier.paymentAmount,
+    next_payment_date: supplier.nextPaymentDate || undefined,
     updated_at: updatedAt,
   }).select().single();
   assertNoError(error);
@@ -210,6 +219,8 @@ export async function saveEmployeeToDatabase(employee: Employee) {
     payment_method: employee.paymentMethod || null,
     pix_key: employee.pixKey.trim() || null,
     payment_date: employee.paymentDate || null,
+    payment_amount: employee.paymentAmount,
+    next_payment_date: employee.nextPaymentDate || undefined,
     updated_at: updatedAt,
   }).select().single();
   assertNoError(error);
@@ -218,6 +229,35 @@ export async function saveEmployeeToDatabase(employee: Employee) {
 
 export async function deleteEmployeeFromDatabase(id: string) {
   const { error } = await supabase.from("employees").delete().eq("id", id);
+  assertNoError(error);
+}
+
+export async function loadPaymentHistoryFromDatabase() {
+  const { data, error } = await supabase
+    .from("payee_payment_history")
+    .select("*")
+    .order("paid_at", { ascending: false })
+    .limit(100);
+  assertNoError(error);
+  return (data || []).map((raw): PaymentHistory => {
+    const row = raw as Record<string, unknown>;
+    return {
+      id: text(row.id),
+      payeeType: row.payee_type as PayeeType,
+      payeeId: text(row.payee_id),
+      payeeName: text(row.payee_name),
+      amount: number(row.amount),
+      dueDate: text(row.due_date),
+      paidAt: text(row.paid_at),
+    };
+  });
+}
+
+export async function markPayeePaymentAsPaid(payeeType: PayeeType, payeeId: string) {
+  const { error } = await supabase.rpc("mark_payee_payment_paid", {
+    target_payee_type: payeeType,
+    target_payee_id: payeeId,
+  });
   assertNoError(error);
 }
 
