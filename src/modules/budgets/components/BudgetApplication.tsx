@@ -266,6 +266,10 @@ export function BudgetApplication() {
   const [emailPassword, setEmailPassword] = useState("");
   const [newAccountEmail, setNewAccountEmail] = useState("");
   const [securitySaving, setSecuritySaving] = useState(false);
+  const [emailChangeResult, setEmailChangeResult] = useState<{
+    ok: boolean;
+    msg: string;
+  } | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
 
@@ -1078,13 +1082,17 @@ export function BudgetApplication() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))
       return notify("Digite um e-mail válido", "error");
     setSecuritySaving(true);
+    setEmailChangeResult(null);
     try {
       await changeAccountEmail(emailPassword, normalizedEmail);
       setEmailPassword("");
       setNewAccountEmail("");
-      notify("Solicitação enviada. Confirme a alteração no novo e-mail.");
+      setEmailChangeResult({
+        ok: true,
+        msg: `Confirmação enviada para ${normalizedEmail}. Clique no link recebido para concluir a troca.`,
+      });
     } catch (error) {
-      notify((error as Error).message, "error");
+      setEmailChangeResult({ ok: false, msg: (error as Error).message });
     } finally {
       setSecuritySaving(false);
     }
@@ -3990,6 +3998,21 @@ export function BudgetApplication() {
                 >
                   {securitySaving ? "Enviando..." : "Alterar e-mail"}
                 </button>
+                {emailChangeResult && (
+                  <div
+                    className={
+                      emailChangeResult.ok ? "security-notice" : "login-error"
+                    }
+                    style={{ marginTop: 12 }}
+                  >
+                    <strong>
+                      {emailChangeResult.ok
+                        ? "✓ Solicitação enviada"
+                        : "! Erro na alteração"}
+                    </strong>
+                    <span>{emailChangeResult.msg}</span>
+                  </div>
+                )}
               </div>
             )}
 
