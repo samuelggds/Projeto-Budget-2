@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Budget, BudgetItem as Item } from "../types/Budget";
-import { deletePdf, getPdf, savePdf } from "../../pdf/services/pdfStorage";
+import { deletePdf, getPdf } from "../../pdf/services/pdfStorage";
 import {
   createInitialBudget,
   createNextBudget,
@@ -720,59 +720,6 @@ export function BudgetApplication() {
       notify("Orçamento e PDF excluídos");
     } catch (error) {
       notify(`Erro: ${(error as Error).message}`);
-    }
-  };
-
-  const generateAndStorePdf = async () => {
-    try {
-      notify("Gerando PDF...");
-      const budgetAtSave = {
-        ...withDefaultItemUnit(budget),
-        createdAt: budget.createdAt || new Date().toISOString(),
-      };
-      const persisted = await saveBudgetToDatabase(budgetAtSave);
-      setBudget(persisted);
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      );
-      const element = document.getElementById("budget-pdf");
-      if (!element)
-        throw new Error("Pré-visualização do orçamento não encontrada");
-
-      const pdf = await createBudgetPdf(element, `${persisted.number}.pdf`);
-      await pdf.download();
-
-      try {
-        const pdfUrl = await savePdf(persisted.id, pdf.blob);
-        const updated = {
-          ...withDefaultItemUnit(persisted),
-          pdfUrl,
-          pdfSavedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        const next = [
-          updated,
-          ...saved.filter((item) => item.id !== updated.id),
-        ];
-        setBudget(updated);
-        setSaved(next);
-        await saveBudgetToDatabase(updated);
-        notify("Orçamento salvo e PDF baixado");
-      } catch (storageError) {
-        setSaved([
-          persisted,
-          ...saved.filter((item) => item.id !== persisted.id),
-        ]);
-        notify(
-          `PDF baixado, mas não foi possível armazená-lo online: ${(storageError as Error).message}`,
-          "error",
-        );
-      }
-    } catch (error) {
-      notify(
-        `Não foi possível gerar o PDF: ${(error as Error).message}`,
-        "error",
-      );
     }
   };
 
