@@ -34,6 +34,7 @@ const budget = (
   items: [],
   technicianName: "",
   updatedAt,
+  createdAt: updatedAt,
 });
 
 afterEach(() => vi.useRealTimers());

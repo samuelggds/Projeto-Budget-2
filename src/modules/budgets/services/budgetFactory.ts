@@ -14,10 +14,11 @@ export const emptyClient = {
 };
 
 export function createInitialBudget(): Budget {
+  const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     number: "ORC-01",
-    issuedAt: new Date().toISOString().slice(0, 10),
+    issuedAt: now.slice(0, 10),
     validDays: 5,
     status: "Enviado",
     technicianName: "",
@@ -35,7 +36,8 @@ export function createInitialBudget(): Budget {
         unitPrice: 0,
       },
     ],
-    updatedAt: new Date().toISOString(),
+    createdAt: "",
+    updatedAt: now,
   };
 }
 

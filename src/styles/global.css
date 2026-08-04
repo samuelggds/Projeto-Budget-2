@@ -1949,3 +1949,9 @@ textarea:focus {
   .billing-dates { grid-template-columns: 1fr; }
   .billing-actions .button { width: 100%; }
 }
+.creation-time-input {
+  background: #e8efff !important;
+  border-color: #9db8f4 !important;
+  color: #173b8f !important;
+  font-weight: 800 !important;
+}

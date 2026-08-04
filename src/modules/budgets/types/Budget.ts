@@ -38,6 +38,7 @@ export type Budget = {
   payment: string
   notes: string
   items: BudgetItem[]
+  createdAt: string
   updatedAt: string
   pdfSavedAt?: string
   pdfUrl?: string

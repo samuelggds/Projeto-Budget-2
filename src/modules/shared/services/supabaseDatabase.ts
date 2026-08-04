@@ -87,6 +87,7 @@ export async function loadDatabase() {
       technicianName: text(row.technician_name),
       client: clientRow ? mapClient(clientRow) : { id: "", name: "", document: "", phone: "", email: "", contact: "", address: "", city: "", state: "CE", cep: "" },
       payment: text(row.payment), notes: text(row.notes), updatedAt: text(row.updated_at),
+      createdAt: text(row.created_at),
       pdfSavedAt: row.pdf_url ? text(row.updated_at) : undefined,
       pdfUrl: row.pdf_url ? text(row.pdf_url) : undefined,
       createdBy: row.created_by ? text(row.created_by) : undefined,
@@ -168,6 +169,7 @@ export async function deleteServiceFromDatabase(id: string) {
 
 export async function saveBudgetToDatabase(budget: Budget) {
   const updatedAt = new Date().toISOString();
+  const createdAt = budget.createdAt || updatedAt;
   let client = budget.client;
   if (!client.id && client.name.trim()) {
     client = await saveClientToDatabase({ ...client, id: crypto.randomUUID() });
@@ -177,7 +179,8 @@ export async function saveBudgetToDatabase(budget: Budget) {
     issued_at: budget.issuedAt, valid_days: budget.validDays,
     technician_name: budget.technicianName.trim() || null,
     status: toDatabaseStatus[budget.status], payment: budget.payment || null,
-    notes: budget.notes || null, pdf_url: budget.pdfUrl || null, updated_at: updatedAt,
+    notes: budget.notes || null, pdf_url: budget.pdfUrl || null,
+    created_at: createdAt, updated_at: updatedAt,
   });
   assertNoError(budgetError);
 
@@ -191,7 +194,7 @@ export async function saveBudgetToDatabase(budget: Budget) {
     })));
     assertNoError(itemsError);
   }
-  return { ...budget, client, updatedAt };
+  return { ...budget, client, createdAt, updatedAt };
 }
 
 export async function loadNextBudgetNumber() {

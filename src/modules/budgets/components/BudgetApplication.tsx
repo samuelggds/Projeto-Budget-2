@@ -720,12 +720,20 @@ export function BudgetApplication() {
         `Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`,
         "error",
       );
+    notify("Gerando PDF...");
+    const budgetAtSave = {
+      ...withDefaultItemUnit(budget),
+      createdAt: budget.createdAt || new Date().toISOString(),
+    };
+    const persisted = await saveBudgetToDatabase(budgetAtSave);
+    setBudget(persisted);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
     const element = document.getElementById("budget-pdf");
     if (!element) return;
-    notify("Gerando PDF...");
-    const pdf = await createBudgetPdf(element, `${budget.number}.pdf`);
+    const pdf = await createBudgetPdf(element, `${persisted.number}.pdf`);
     const blob = pdf.blob;
-    const persisted = await saveBudgetToDatabase(withDefaultItemUnit(budget));
     const pdfUrl = await savePdf(persisted.id, blob);
     const updated = {
       ...withDefaultItemUnit(persisted),
@@ -965,6 +973,22 @@ export function BudgetApplication() {
                     onChange={(e) =>
                       setBudget({ ...budget, issuedAt: e.target.value })
                     }
+                  />
+                </label>
+                <label>
+                  Horário do salvamento
+                  <input
+                    className="creation-time-input"
+                    value={budget.createdAt
+                      ? new Date(budget.createdAt).toLocaleTimeString("pt-BR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })
+                      : "Será registrado ao salvar"}
+                    readOnly
+                    aria-readonly="true"
+                    title="Horário registrado automaticamente no primeiro salvamento"
                   />
                 </label>
                 <label>
@@ -1323,6 +1347,15 @@ export function BudgetApplication() {
                     {new Date(`${budget.issuedAt}T12:00:00`).toLocaleDateString(
                       "pt-BR",
                     )}
+                  </small>
+                  <small>
+                    Salvo às {budget.createdAt
+                      ? new Date(budget.createdAt).toLocaleTimeString("pt-BR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })
+                      : "aguardando salvamento"}
                   </small>
                 </div>
               </div>
