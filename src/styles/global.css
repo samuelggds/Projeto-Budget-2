@@ -2164,6 +2164,11 @@ textarea {
     display: none;
   }
 
+  /* Hide group labels in the bottom nav bar */
+  .nav-group-label {
+    display: none;
+  }
+
   .sidebar nav button,
   .sidebar nav button:not(.active) {
     flex: 1 0 68px;
@@ -2434,6 +2439,169 @@ textarea {
     padding: 22px 18px;
     border-radius: 15px;
   }
+
+  /* ── Financeiro ────────────────────────────── */
+  .financial-layout {
+    grid-template-columns: 1fr;
+  }
+  .financial-stats,
+  .financial-stats-3 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .financial-history-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .financial-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .financial-toolbar .search {
+    min-width: 0;
+  }
+  .financial-budget-head,
+  .financial-budget-row {
+    grid-template-columns: 80px 1fr 90px;
+    font-size: 11px;
+  }
+  .financial-budget-head span:nth-child(n + 4),
+  .financial-budget-row span:nth-child(n + 4),
+  .financial-budget-row strong {
+    display: none;
+  }
+  .financial-all-row {
+    grid-template-columns: 70px 1fr 90px !important;
+  }
+  .financial-month-totals {
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 11px;
+  }
+  .financial-table-head,
+  .financial-table-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* ── Total / Desconto ───────────────────────── */
+  .total-area {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .total-box {
+    width: 100%;
+  }
+  .discount-section {
+    width: 100%;
+  }
+  .discount-picker {
+    right: auto;
+    left: 0;
+    width: 100%;
+  }
+
+  /* ── Suppliers / Employees ──────────────────── */
+  .supplier-table,
+  .payment-history-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .supplier-row {
+    min-width: 700px;
+  }
+  .payment-history-row {
+    grid-template-columns: 1fr 1fr;
+    min-width: 0;
+  }
+  .payment-alert-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .payment-alert-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+  .payment-alert-actions .button {
+    width: 100%;
+  }
+
+  /* ── Load controls ──────────────────────────── */
+  .load-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .load-controls .button {
+    width: 100%;
+  }
+
+  /* ── Row actions ────────────────────────────── */
+  .row-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* ── Maintenance ────────────────────────────── */
+  .maintenance-layout {
+    grid-template-columns: 1fr;
+  }
+  .maintenance-panel-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .maintenance-panel-header .financial-view-toggle {
+    align-self: flex-start;
+  }
+  .maintenance-head {
+    display: none;
+  }
+  .maintenance-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 6px;
+  }
+  .maintenance-row > span {
+    display: block !important;
+  }
+  .cal-grid {
+    gap: 3px;
+  }
+  .cal-day {
+    min-height: 46px;
+    padding: 4px;
+  }
+  .cal-plan-chip span {
+    display: none;
+  }
+  .cal-nav strong {
+    font-size: 14px;
+    min-width: 140px;
+  }
+
+  /* ── Discount settings table ────────────────── */
+  .discount-table .supplier-row {
+    min-width: 0;
+  }
+  .discount-table .supplier-head span:nth-child(2),
+  .discount-table .supplier-row span:nth-child(2) {
+    display: none;
+  }
+
+  /* ── Form grid ──────────────────────────────── */
+  .form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .form-grid label.wide {
+    grid-column: 1 / -1;
+  }
+  .maintenance-form .form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 400px) {
@@ -2445,6 +2613,16 @@ textarea {
   .card {
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .financial-stats,
+  .financial-stats-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid,
+  .maintenance-form .form-grid {
+    grid-template-columns: 1fr;
   }
 
   .paper {
