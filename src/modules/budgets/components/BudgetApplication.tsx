@@ -14,13 +14,14 @@ import { createBudgetPdf, downloadPdfBlob } from "../../pdf/services/budgetPdf";
 import type { Client } from "../../clients/types/Client";
 import type { Service } from "../../services/types/Service";
 import { getAllowedNextStatuses } from "../services/budgetStatus";
-import { supabase } from "../../auth/services/supabase";
+import { changeAccountEmail, changeAccountPassword, supabase } from "../../auth/services/supabase";
 import {
   approveBudgetAndDeductStock,
   deleteBudgetFromDatabase,
   deletePartFromDatabase,
   deleteServiceFromDatabase,
   loadDatabase,
+  loadNextBudgetNumber,
   loadPartsFromDatabase,
   saveAppSettingsToDatabase,
   saveBudgetToDatabase,
@@ -35,6 +36,8 @@ import {
 } from "../../settings/types/AppSettings";
 import type { Part } from "../../stock/types/Part";
 import { BillingOverview } from "../../billing/components/BillingOverview";
+import { useAppRole } from "../../auth/context/appAccessContext";
+import { PasswordInput } from "../../shared/components/PasswordInput";
 
 const withDefaultItemUnit = (current: Budget): Budget => ({
   ...current,
@@ -42,10 +45,13 @@ const withDefaultItemUnit = (current: Budget): Budget => ({
 });
 
 export function BudgetApplication() {
+  const appRole = useAppRole();
+  const isEmployee = appRole === "FUNCIONARIO";
   const [tab, setTab] = useState<
     "new" | "saved" | "clients" | "services" | "stock" | "billing" | "settings"
   >("new");
   const [preview, setPreview] = useState(false);
+  const [historyReadOnly, setHistoryReadOnly] = useState(false);
   const [budget, setBudget] = useState<Budget>(createInitialBudget);
   const [saved, setSaved] = useState<Budget[]>([]);
   const [search, setSearch] = useState("");
@@ -90,6 +96,13 @@ export function BudgetApplication() {
     stockQuantity: 0,
     unitPrice: 0,
   });
+  const [settingsSection, setSettingsSection] = useState<"company" | "password" | "email">("company");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [newAccountEmail, setNewAccountEmail] = useState("");
+  const [securitySaving, setSecuritySaving] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const total = useMemo(() => calculateBudgetTotal(budget), [budget]);
@@ -109,12 +122,35 @@ export function BudgetApplication() {
         setSaved(normalizedBudgets);
         setAppSettings(data.settings);
         setParts(data.parts);
-        if (normalizedBudgets.length)
-          setBudget(createNextBudget(normalizedBudgets));
+        const nextBudget = createNextBudget(normalizedBudgets);
+        void loadNextBudgetNumber()
+          .then((number) => setBudget({ ...nextBudget, number }))
+          .catch(() => setBudget(nextBudget));
       })
       .catch((error: Error) => setDatabaseError(error.message))
       .finally(() => setDatabaseLoading(false));
-  }, []);
+  }, [isEmployee]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("budget-history-status")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "budgets" },
+        () => {
+          void loadDatabase().then((data) => {
+            const normalizedBudgets = data.budgets.map(withDefaultItemUnit);
+            setSaved(normalizedBudgets);
+            if (historyReadOnly) {
+              setBudget((current) => normalizedBudgets.find((item) => item.id === current.id) ?? current);
+            }
+          });
+        },
+      )
+      .subscribe();
+
+    return () => { void supabase.removeChannel(channel); };
+  }, [historyReadOnly]);
 
   useEffect(() => {
     if (tab !== "services" || !serviceDraft.id) return;
@@ -504,6 +540,51 @@ export function BudgetApplication() {
     }
   };
 
+  const passwordChecks = {
+    length: newPassword.length >= 8,
+    uppercase: /[A-Z]/.test(newPassword),
+    lowercase: /[a-z]/.test(newPassword),
+    number: /\d/.test(newPassword),
+    special: /[^A-Za-z0-9]/.test(newPassword),
+  };
+  const passwordIsValid = Object.values(passwordChecks).every(Boolean);
+
+  const saveNewPassword = async () => {
+    if (!currentPassword) return notify("Informe a senha atual", "error");
+    if (!passwordIsValid) return notify("A nova senha não atende aos requisitos", "error");
+    if (newPassword !== confirmPassword) return notify("A confirmação da senha está diferente", "error");
+    setSecuritySaving(true);
+    try {
+      await changeAccountPassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      notify("Senha alterada com sucesso");
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setSecuritySaving(false);
+    }
+  };
+
+  const saveNewEmail = async () => {
+    const normalizedEmail = newAccountEmail.trim().toLowerCase();
+    if (!emailPassword) return notify("Informe a senha atual", "error");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))
+      return notify("Digite um e-mail válido", "error");
+    setSecuritySaving(true);
+    try {
+      await changeAccountEmail(emailPassword, normalizedEmail);
+      setEmailPassword("");
+      setNewAccountEmail("");
+      notify("Solicitação enviada. Confirme a alteração no novo e-mail.");
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setSecuritySaving(false);
+    }
+  };
+
   const brandLogo = appSettings.logoDataUrl || "/logo-placeholder.svg";
   const brandInitials =
     appSettings.companyName
@@ -593,8 +674,16 @@ export function BudgetApplication() {
     }
   };
 
-  const newBudget = () => {
-    setBudget(createNextBudget(saved));
+  const newBudget = async () => {
+    const nextBudget = createNextBudget(saved);
+    setBudget(nextBudget);
+    try {
+      const number = await loadNextBudgetNumber();
+      setBudget((current) => current.id === nextBudget.id ? { ...current, number } : current);
+    } catch {
+      notify("Não foi possível confirmar a próxima numeração", "error");
+    }
+    setHistoryReadOnly(false);
     setPreview(false);
     setTab("new");
   };
@@ -602,7 +691,8 @@ export function BudgetApplication() {
   const openBudget = (item: Budget) => {
     setBudget(withDefaultItemUnit(item));
     setTab("new");
-    setPreview(false);
+    setHistoryReadOnly(isEmployee);
+    setPreview(isEmployee);
   };
 
   const removeBudget = async (item: Budget) => {
@@ -616,7 +706,7 @@ export function BudgetApplication() {
       await deleteBudgetFromDatabase(item.id);
       const next = saved.filter((savedItem) => savedItem.id !== item.id);
       setSaved(next);
-      await deletePdf(item.id);
+      await deletePdf(item.id, item.pdfUrl);
       notify("Orçamento e PDF excluídos");
     } catch (error) {
       notify(`Erro: ${(error as Error).message}`);
@@ -635,9 +725,11 @@ export function BudgetApplication() {
     notify("Gerando PDF...");
     const pdf = await createBudgetPdf(element, `${budget.number}.pdf`);
     const blob = pdf.blob;
-    await savePdf(budget.id, blob);
+    const persisted = await saveBudgetToDatabase(withDefaultItemUnit(budget));
+    const pdfUrl = await savePdf(persisted.id, blob);
     const updated = {
-      ...withDefaultItemUnit(budget),
+      ...withDefaultItemUnit(persisted),
+      pdfUrl,
       pdfSavedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -650,12 +742,32 @@ export function BudgetApplication() {
   };
 
   const downloadStoredPdf = async (item: Budget) => {
-    const blob = await getPdf(item.id);
+    const blob = await getPdf(item.id, item.pdfUrl);
     if (!blob) {
       notify("PDF não encontrado. Abra o orçamento e gere novamente.");
       return;
     }
     downloadPdfBlob(blob, `${item.number}.pdf`);
+  };
+
+  const downloadReadOnlyPdf = async () => {
+    try {
+      const storedBlob = await getPdf(budget.id, budget.pdfUrl);
+      if (storedBlob) {
+        downloadPdfBlob(storedBlob, `${budget.number}.pdf`);
+        notify("PDF baixado");
+        return;
+      }
+
+      const element = document.getElementById("budget-pdf");
+      if (!element) return notify("Não foi possível localizar o orçamento", "error");
+      notify("Gerando PDF...");
+      const pdf = await createBudgetPdf(element, `${budget.number}.pdf`);
+      await pdf.download();
+      notify("PDF gerado e baixado");
+    } catch (error) {
+      notify(`Erro ao gerar PDF: ${(error as Error).message}`, "error");
+    }
   };
 
   const clearFilters = () => {
@@ -717,7 +829,7 @@ export function BudgetApplication() {
             className={tab === "saved" ? "active" : ""}
             onClick={() => setTab("saved")}
           >
-            <i>▤</i>Orçamentos
+            <i>▤</i>{isEmployee ? "Histórico" : "Orçamentos"}
           </button>
           <button
             className={tab === "clients" ? "active" : ""}
@@ -737,18 +849,18 @@ export function BudgetApplication() {
           >
             <i>▣</i>Estoque
           </button>
-          <button
+          {!isEmployee && <button
             className={tab === "billing" ? "active" : ""}
             onClick={() => setTab("billing")}
           >
             <i>R$</i>Mensalidade
-          </button>
-          <button
+          </button>}
+          {!isEmployee && <button
             className={tab === "settings" ? "active" : ""}
             onClick={() => setTab("settings")}
           >
             <i>⚙</i>Configurações
-          </button>
+          </button>}
         </nav>
         <div className="sidebar-card">
           <span>Atalho rápido</span>
@@ -759,7 +871,7 @@ export function BudgetApplication() {
           <span>{brandInitials}</span>
           <div>
             <strong>{appSettings.companyName}</strong>
-            <small>Administrador</small>
+            <small>{isEmployee ? "Funcionário" : "Administrador"}</small>
           </div>
           <button
             className="logout-button"
@@ -781,7 +893,9 @@ export function BudgetApplication() {
                   ? "Pré-visualização"
                   : "Novo orçamento"
                 : tab === "saved"
-                  ? "Orçamentos"
+                  ? isEmployee
+                    ? "Histórico de orçamentos"
+                    : "Orçamentos"
                   : tab === "clients"
                     ? "Clientes"
                     : tab === "services"
@@ -796,13 +910,21 @@ export function BudgetApplication() {
               {tab === "new"
                 ? "Preencha os dados e gere uma proposta profissional."
                 : tab === "saved"
-                  ? "Consulte e gerencie suas propostas comerciais."
+                  ? isEmployee
+                    ? "Consulte, abra e baixe os orçamentos salvos por sua conta."
+                    : "Consulte e gerencie suas propostas comerciais."
                   : tab === "clients"
-                    ? "Cadastre os clientes que serão usados nos orçamentos."
+                    ? isEmployee
+                      ? "Consulte os dados dos clientes cadastrados."
+                      : "Cadastre os clientes que serão usados nos orçamentos."
                     : tab === "services"
-                      ? "Cadastre códigos, descrições e valores para preenchimento automático."
+                      ? isEmployee
+                        ? "Consulte os códigos e valores dos serviços cadastrados."
+                        : "Cadastre códigos, descrições e valores para preenchimento automático."
                       : tab === "stock"
-                        ? "Cadastre peças para venda e adicione-as aos orçamentos."
+                        ? isEmployee
+                          ? "Consulte códigos, valores e quantidades disponíveis em estoque."
+                          : "Cadastre peças para venda e adicione-as aos orçamentos."
                         : tab === "billing"
                           ? "Acompanhe vencimentos, pagamentos e faturas da assinatura."
                           : "Personalize os dados exibidos nos orçamentos."}
@@ -859,6 +981,14 @@ export function BudgetApplication() {
                       { value: "15", label: "15 dias" },
                       { value: "30", label: "30 dias" },
                     ]}
+                  />
+                </label>
+                <label className="full">
+                  Técnico responsável
+                  <input
+                    placeholder="Ex.: João da Silva"
+                    value={budget.technicianName}
+                    onChange={(event) => setBudget({ ...budget, technicianName: event.target.value })}
                   />
                 </label>
               </div>
@@ -1116,7 +1246,7 @@ export function BudgetApplication() {
                   Status
                   <input value={budget.status} readOnly />
                 </label>
-                <div className="status-actions full">
+                {!isEmployee && <div className="status-actions full">
                   <span>Próxima etapa</span>
                   {getAllowedNextStatuses(budget.status)
                     .filter((status) => status !== "Recusado")
@@ -1142,7 +1272,7 @@ export function BudgetApplication() {
                   {getAllowedNextStatuses(budget.status).length === 0 && (
                     <strong>Status final: {budget.status}</strong>
                   )}
-                </div>
+                </div>}
                 <label className="full">
                   Observações
                   <textarea
@@ -1182,6 +1312,10 @@ export function BudgetApplication() {
                   </p>
                 </div>
                 <div className="paper-number">
+                  <div className="paper-technician">
+                    <span>TÉCNICO RESPONSÁVEL</span>
+                    <b>{budget.technicianName || "Não informado"}</b>
+                  </div>
                   <span>ORÇAMENTO DE SERVIÇOS E PEÇAS</span>
                   <strong>{budget.number}</strong>
                   <small>
@@ -1305,16 +1439,20 @@ export function BudgetApplication() {
                   : "Antes de baixar e salvar , visualize o documento e veja se está correto!"}
               </span>
             </div>
-            <button
+            {historyReadOnly ? (
+              <button className="button primary" onClick={downloadReadOnlyPdf}>
+                ↧ Baixar PDF
+              </button>
+            ) : <button
               className="button ghost"
               onClick={() => setPreview(!preview)}
             >
               {preview ? "← Voltar para edição" : "◉ Visualizar"}
-            </button>
-            <button className="button primary" onClick={saveBudget}>
+            </button>}
+            {!historyReadOnly && <button className="button primary" onClick={saveBudget}>
               ✓ Salvar orçamento
-            </button>
-            {preview && (
+            </button>}
+            {!historyReadOnly && preview && (
               <button className="button primary" onClick={generateAndStorePdf}>
                 ↧ Salvar e baixar PDF
               </button>
@@ -1336,8 +1474,9 @@ export function BudgetApplication() {
                 <span>PDFs guardados</span>
               </div>
               <p>
-                Use os filtros para encontrar rapidamente sem acumular
-                informações na tela.
+                {isEmployee
+                  ? "Seu histórico é somente para consulta. Use os filtros para localizar e baixar um orçamento."
+                  : "Use os filtros para encontrar rapidamente sem acumular informações na tela."}
               </p>
             </div>
             <div className="saved-toolbar">
@@ -1429,13 +1568,15 @@ export function BudgetApplication() {
                     {item.pdfSavedAt ? "Baixar PDF" : "Não gerado"}
                   </button>
                   <div className="row-actions">
-                    <button onClick={() => openBudget(item)}>Abrir</button>
-                    <button
+                    <button onClick={() => openBudget(item)}>
+                      {isEmployee ? "Visualizar" : "Abrir"}
+                    </button>
+                    {!isEmployee && <button
                       className="delete-action"
                       onClick={() => removeBudget(item)}
                     >
                       Excluir
-                    </button>
+                    </button>}
                   </div>
                 </div>
               ))}
@@ -1476,8 +1617,8 @@ export function BudgetApplication() {
         )}
 
         {tab === "clients" && (
-          <section className="registry-layout">
-            <div className="card registry-form">
+          <section className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}>
+            {!isEmployee && <div className="card registry-form">
               <div className="section-title">
                 <span>01</span>
                 <div>
@@ -1587,7 +1728,7 @@ export function BudgetApplication() {
               >
                 Salvar cliente
               </button>
-            </div>
+            </div>}
             <div className="card registry-list">
               <h2>Clientes cadastrados</h2>
               {clients.map((client) => (
@@ -1599,7 +1740,7 @@ export function BudgetApplication() {
                       {client.phone || "Sem telefone"}
                     </small>
                   </div>
-                  <button onClick={() => setClientDraft(client)}>Editar</button>
+                  {!isEmployee && <button onClick={() => setClientDraft(client)}>Editar</button>}
                 </div>
               ))}
               {!clients.length && (
@@ -1610,8 +1751,8 @@ export function BudgetApplication() {
         )}
 
         {tab === "services" && (
-          <section className="registry-layout">
-            <div
+          <section className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}>
+            {!isEmployee && <div
               id="service-form"
               tabIndex={-1}
               className={`card registry-form service-form-card ${serviceDraft.id ? "is-editing" : ""}`}
@@ -1697,11 +1838,11 @@ export function BudgetApplication() {
                   </button>
                 )}
               </div>
-            </div>
+            </div>}
             <div className="card registry-list">
               <div className="registry-title">
                 <h2>Planilha de serviços</h2>
-                <div className="registry-actions">
+                {!isEmployee && <div className="registry-actions">
                   <button
                     className="button ghost"
                     disabled={!services.length}
@@ -1721,7 +1862,7 @@ export function BudgetApplication() {
                   >
                     ＋ Adicionar serviço
                   </button>
-                </div>
+                </div>}
               </div>
               <div id="service-pdf" className="services-paper">
                 <div className="services-paper-head">
@@ -1742,7 +1883,7 @@ export function BudgetApplication() {
                   <span>Serviço</span>
                   <span>Unidade</span>
                   <span>Valor</span>
-                  <span className="service-actions-label">Ações</span>
+                  {!isEmployee && <span className="service-actions-label">Ações</span>}
                 </div>
                 {services.map((service) => (
                   <div
@@ -1755,7 +1896,7 @@ export function BudgetApplication() {
                     </div>
                     <span>{service.unit}</span>
                     <b>{money(service.unitPrice)}</b>
-                    <div className="service-actions">
+                    {!isEmployee && <div className="service-actions">
                       <button
                         className="add-to-budget"
                         onClick={() => addServiceToBudget(service)}
@@ -1773,7 +1914,7 @@ export function BudgetApplication() {
                       >
                         Excluir
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 ))}
                 <footer>{services.length} serviço(s) cadastrado(s)</footer>
@@ -1788,8 +1929,8 @@ export function BudgetApplication() {
         )}
 
         {tab === "stock" && (
-          <section className="registry-layout stock-layout">
-            <div
+          <section className={`registry-layout stock-layout ${isEmployee ? "read-only-registry" : ""}`}>
+            {!isEmployee && <div
               className={`card registry-form ${partDraft.id ? "is-editing" : ""}`}
             >
               <div className="section-title">
@@ -1881,7 +2022,7 @@ export function BudgetApplication() {
                   </button>
                 )}
               </div>
-            </div>
+            </div>}
             <div className="card registry-list">
               <div className="registry-title">
                 <div>
@@ -1890,9 +2031,9 @@ export function BudgetApplication() {
                     A baixa ocorre somente quando o orçamento é aprovado.
                   </p>
                 </div>
-                <button className="button soft" onClick={clearPartDraft}>
+                {!isEmployee && <button className="button soft" onClick={clearPartDraft}>
                   ＋ Nova peça
-                </button>
+                </button>}
               </div>
               <div className="stock-summary">
                 <div>
@@ -1919,7 +2060,7 @@ export function BudgetApplication() {
                   <span>Estoque</span>
                   <span>Valor de venda</span>
                   <span>Situação</span>
-                  <span>Ações</span>
+                  {!isEmployee && <span>Ações</span>}
                 </div>
                 {parts.map((part) => (
                   <div
@@ -1935,7 +2076,7 @@ export function BudgetApplication() {
                     >
                       {part.stockQuantity > 0 ? "Disponível" : "Indisponível"}
                     </em>
-                    <div className="stock-actions">
+                    {!isEmployee && <div className="stock-actions">
                       <button
                         className="add-to-budget"
                         disabled={part.stockQuantity <= 0}
@@ -1950,7 +2091,7 @@ export function BudgetApplication() {
                       >
                         Excluir
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 ))}
                 {!parts.length && (
@@ -1969,11 +2110,11 @@ export function BudgetApplication() {
         {tab === "settings" && (
           <section className="settings-layout">
             <div className="settings-menu card">
-              <button className="active">Empresa</button>
-              <button>Preferências</button>
-              <button>Numeração</button>
+              <button className={settingsSection === "company" ? "active" : ""} onClick={() => setSettingsSection("company")}>Empresa</button>
+              <button className={settingsSection === "password" ? "active" : ""} onClick={() => setSettingsSection("password")}>Alterar senha</button>
+              <button className={settingsSection === "email" ? "active" : ""} onClick={() => setSettingsSection("email")}>Alterar e-mail</button>
             </div>
-            <div className="card settings-form">
+            {settingsSection === "company" && <div className="card settings-form">
               <div className="section-title">
                 <span>ID</span>
                 <div>
@@ -2086,7 +2227,92 @@ export function BudgetApplication() {
               <button className="button primary" onClick={saveAppSettings}>
                 Salvar alterações
               </button>
-            </div>
+            </div>}
+
+            {settingsSection === "password" && <div className="card settings-form security-settings-form">
+              <div className="section-title">
+                <span>🔒</span>
+                <div>
+                  <h2>Alterar senha</h2>
+                  <p>Atualize a senha usada para acessar o painel administrativo</p>
+                </div>
+              </div>
+              <div className="security-fields">
+                <label>
+                  Senha atual
+                  <PasswordInput
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Nova senha
+                  <PasswordInput
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Confirmar nova senha
+                  <PasswordInput
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="password-validation" aria-live="polite">
+                <strong>A nova senha precisa ter:</strong>
+                <span className={passwordChecks.length ? "valid" : ""}>✓ Pelo menos 8 caracteres</span>
+                <span className={passwordChecks.uppercase ? "valid" : ""}>✓ Uma letra maiúscula</span>
+                <span className={passwordChecks.lowercase ? "valid" : ""}>✓ Uma letra minúscula</span>
+                <span className={passwordChecks.number ? "valid" : ""}>✓ Um número</span>
+                <span className={passwordChecks.special ? "valid" : ""}>✓ Um caractere especial</span>
+                <span className={confirmPassword && confirmPassword === newPassword ? "valid" : ""}>✓ Confirmação igual à nova senha</span>
+              </div>
+              <button className="button primary" disabled={securitySaving} onClick={saveNewPassword}>
+                {securitySaving ? "Alterando..." : "Alterar senha"}
+              </button>
+            </div>}
+
+            {settingsSection === "email" && <div className="card settings-form security-settings-form">
+              <div className="section-title">
+                <span>✉</span>
+                <div>
+                  <h2>Alterar e-mail</h2>
+                  <p>O novo endereço será usado no próximo acesso ao sistema</p>
+                </div>
+              </div>
+              <div className="security-fields email-security-fields">
+                <label>
+                  Novo e-mail
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="novo@email.com"
+                    value={newAccountEmail}
+                    onChange={(event) => setNewAccountEmail(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Senha atual para confirmar
+                  <PasswordInput
+                    autoComplete="current-password"
+                    value={emailPassword}
+                    onChange={(event) => setEmailPassword(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="security-notice">
+                <strong>Confirmação de segurança</strong>
+                <span>O Supabase enviará uma confirmação para o novo endereço. A troca será concluída depois da confirmação.</span>
+              </div>
+              <button className="button primary" disabled={securitySaving} onClick={saveNewEmail}>
+                {securitySaving ? "Enviando..." : "Alterar e-mail"}
+              </button>
+            </div>}
           </section>
         )}
       </main>

@@ -1,4 +1,4 @@
-export type AppRole = "ADMIN" | "BILLING_ADMIN";
+export type AppRole = "ADMIN" | "BILLING_ADMIN" | "FUNCIONARIO";
 
 export type SubscriptionStatus = "INACTIVE" | "ACTIVE" | "GRACE" | "BLOCKED";
 
@@ -30,4 +30,3 @@ export interface SubscriptionInvoice {
   paidAt?: string;
   createdAt: string;
 }
-

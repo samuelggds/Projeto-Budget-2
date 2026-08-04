@@ -84,9 +84,12 @@ export async function loadDatabase() {
       id: text(row.id), number: text(row.number), issuedAt: text(row.issued_at),
       validDays: number(row.valid_days),
       status: fromDatabaseStatus[row.status as DatabaseStatus],
+      technicianName: text(row.technician_name),
       client: clientRow ? mapClient(clientRow) : { id: "", name: "", document: "", phone: "", email: "", contact: "", address: "", city: "", state: "CE", cep: "" },
       payment: text(row.payment), notes: text(row.notes), updatedAt: text(row.updated_at),
       pdfSavedAt: row.pdf_url ? text(row.updated_at) : undefined,
+      pdfUrl: row.pdf_url ? text(row.pdf_url) : undefined,
+      createdBy: row.created_by ? text(row.created_by) : undefined,
       stockDeductedAt: row.stock_deducted_at ? text(row.stock_deducted_at) : undefined,
       items: items.map((item) => ({
         id: text(item.id), serviceId: text(item.service_id), partId: text(item.part_id), serviceCode: text(item.service_code),
@@ -172,8 +175,9 @@ export async function saveBudgetToDatabase(budget: Budget) {
   const { error: budgetError } = await supabase.from("budgets").upsert({
     id: budget.id, number: budget.number, client_id: client.id || null,
     issued_at: budget.issuedAt, valid_days: budget.validDays,
+    technician_name: budget.technicianName.trim() || null,
     status: toDatabaseStatus[budget.status], payment: budget.payment || null,
-    notes: budget.notes || null, updated_at: updatedAt,
+    notes: budget.notes || null, pdf_url: budget.pdfUrl || null, updated_at: updatedAt,
   });
   assertNoError(budgetError);
 
@@ -188,6 +192,12 @@ export async function saveBudgetToDatabase(budget: Budget) {
     assertNoError(itemsError);
   }
   return { ...budget, client, updatedAt };
+}
+
+export async function loadNextBudgetNumber() {
+  const { data, error } = await supabase.rpc("get_next_budget_number");
+  assertNoError(error);
+  return text(data) || "ORC-01";
 }
 
 export async function deleteBudgetFromDatabase(id: string) {

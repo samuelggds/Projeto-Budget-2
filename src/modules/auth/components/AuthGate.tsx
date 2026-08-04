@@ -5,6 +5,7 @@ import { LoginPage } from "./LoginPage";
 import { BillingPanel, SubscriptionBlocked } from "../../billing/components/BillingPanel";
 import { loadBilling, loadCurrentRole, subscriptionAllowsAccess } from "../../billing/services/billingApi";
 import type { AppRole, AppSubscription } from "../../billing/types/Billing";
+import { AppAccessProvider } from "../context/AppAccessProvider";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -35,5 +36,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (!user) return <LoginPage />;
   if (accessError || !role || !subscription) return <main className="database-error-page"><section className="login-card"><div className="login-error">{accessError || "Conta sem permissão configurada"}</div><button className="button primary" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</button></section></main>;
   if (role === "BILLING_ADMIN") return <BillingPanel />;
-  return subscriptionAllowsAccess(subscription) ? children : <SubscriptionBlocked subscription={subscription} />;
+  return subscriptionAllowsAccess(subscription)
+    ? <AppAccessProvider role={role}>{children}</AppAccessProvider>
+    : <SubscriptionBlocked subscription={subscription} />;
 }

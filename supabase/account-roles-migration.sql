@@ -3,7 +3,7 @@
 
 create table if not exists public.app_user_roles (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  role text not null check (role in ('ADMIN', 'BILLING_ADMIN')),
+  role text not null check (role in ('ADMIN', 'BILLING_ADMIN', 'FUNCIONARIO')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -94,4 +94,3 @@ using (
   public.has_app_role('ADMIN')
   or public.has_app_role('BILLING_ADMIN')
 );
-

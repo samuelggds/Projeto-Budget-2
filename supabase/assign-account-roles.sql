@@ -15,8 +15,14 @@ where lower(email) = lower('EMAIL_DA_CONTA_DE_ATIVACAO_AQUI')
 on conflict (user_id) do update
 set role = excluded.role, updated_at = now();
 
+insert into public.app_user_roles (user_id, role)
+select id, 'FUNCIONARIO'
+from auth.users
+where lower(email) = lower('EMAIL_DA_CONTA_DO_FUNCIONARIO_AQUI')
+on conflict (user_id) do update
+set role = excluded.role, updated_at = now();
+
 select u.email, r.role
 from public.app_user_roles r
 join auth.users u on u.id = r.user_id
 order by r.role;
-

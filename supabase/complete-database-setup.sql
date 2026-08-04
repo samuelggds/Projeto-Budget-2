@@ -42,6 +42,7 @@ create table if not exists public.budgets (
   client_id uuid references public.clients(id) on delete set null,
   issued_at date not null default current_date,
   valid_days integer not null default 5 check (valid_days > 0),
+  technician_name text,
   status text not null default 'ENVIADO' check (status in ('ENVIADO','RECUSADO','EM_ANDAMENTO','APROVADO','PAGO')),
   payment text,
   notes text,

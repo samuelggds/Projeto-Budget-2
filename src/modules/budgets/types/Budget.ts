@@ -22,6 +22,7 @@ export type Budget = {
   issuedAt: string
   validDays: number
   status: BudgetStatus
+  technicianName: string
   client: {
     id?: string
     name: string
@@ -39,5 +40,7 @@ export type Budget = {
   items: BudgetItem[]
   updatedAt: string
   pdfSavedAt?: string
+  pdfUrl?: string
+  createdBy?: string
   stockDeductedAt?: string
 }

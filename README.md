@@ -15,6 +15,7 @@ Copie `.env.example` para `.env` e preencha somente a URL e a chave pública do 
 
 - `ADMIN`: usa o sistema enquanto a mensalidade estiver válida.
 - `BILLING_ADMIN`: acessa somente o painel de mensalidade, ativação, desativação, Pix e histórico.
+- `FUNCIONARIO`: cria, salva e baixa orçamentos; consulta clientes, serviços e estoque sem cadastrar, editar ou excluir.
 
 Não existe cadastro público. Crie os usuários em Authentication > Users e desative novos cadastros no provedor de e-mail.
 
@@ -36,6 +37,12 @@ Execute uma vez no SQL Editor:
 12. `public-brand-migration.sql`
 13. `billing-realtime-migration.sql`
 14. `service-unit-migration.sql`
+15. `employee-role-migration.sql`
+16. `technician-responsible-migration.sql`
+
+Para cadastrar um funcionário, crie a conta em **Authentication > Users**, abra
+`assign-account-roles.sql`, substitua `EMAIL_DA_CONTA_DO_FUNCIONARIO_AQUI` pelo
+e-mail criado e execute o bloco `FUNCIONARIO` no SQL Editor.
 
 ## Secrets das Edge Functions
 

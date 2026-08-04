@@ -20,6 +20,7 @@ export function createInitialBudget(): Budget {
     issuedAt: new Date().toISOString().slice(0, 10),
     validDays: 5,
     status: "Enviado",
+    technicianName: "",
     client: { ...emptyClient },
     payment: "PIX",
     notes: "",
