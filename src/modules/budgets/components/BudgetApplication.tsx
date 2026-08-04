@@ -14,7 +14,11 @@ import { createBudgetPdf, downloadPdfBlob } from "../../pdf/services/budgetPdf";
 import type { Client } from "../../clients/types/Client";
 import type { Service } from "../../services/types/Service";
 import { getAllowedNextStatuses } from "../services/budgetStatus";
-import { changeAccountEmail, changeAccountPassword, supabase } from "../../auth/services/supabase";
+import {
+  changeAccountEmail,
+  changeAccountPassword,
+  supabase,
+} from "../../auth/services/supabase";
 import {
   approveBudgetAndDeductStock,
   deleteBudgetFromDatabase,
@@ -96,7 +100,9 @@ export function BudgetApplication() {
     stockQuantity: 0,
     unitPrice: 0,
   });
-  const [settingsSection, setSettingsSection] = useState<"company" | "password" | "email">("company");
+  const [settingsSection, setSettingsSection] = useState<
+    "company" | "password" | "email"
+  >("company");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -142,14 +148,20 @@ export function BudgetApplication() {
             const normalizedBudgets = data.budgets.map(withDefaultItemUnit);
             setSaved(normalizedBudgets);
             if (historyReadOnly) {
-              setBudget((current) => normalizedBudgets.find((item) => item.id === current.id) ?? current);
+              setBudget(
+                (current) =>
+                  normalizedBudgets.find((item) => item.id === current.id) ??
+                  current,
+              );
             }
           });
         },
       )
       .subscribe();
 
-    return () => { void supabase.removeChannel(channel); };
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [historyReadOnly]);
 
   useEffect(() => {
@@ -551,8 +563,10 @@ export function BudgetApplication() {
 
   const saveNewPassword = async () => {
     if (!currentPassword) return notify("Informe a senha atual", "error");
-    if (!passwordIsValid) return notify("A nova senha não atende aos requisitos", "error");
-    if (newPassword !== confirmPassword) return notify("A confirmação da senha está diferente", "error");
+    if (!passwordIsValid)
+      return notify("A nova senha não atende aos requisitos", "error");
+    if (newPassword !== confirmPassword)
+      return notify("A confirmação da senha está diferente", "error");
     setSecuritySaving(true);
     try {
       await changeAccountPassword(currentPassword, newPassword);
@@ -658,12 +672,6 @@ export function BudgetApplication() {
   };
 
   const saveBudget = async () => {
-    const stockError = stockValidationError(budget);
-    if (stockError)
-      return notify(
-        `Não foi possível salvar. Estoque insuficiente: ${stockError}`,
-        "error",
-      );
     try {
       const current = await saveBudgetToDatabase(withDefaultItemUnit(budget));
       setBudget(current);
@@ -679,7 +687,9 @@ export function BudgetApplication() {
     setBudget(nextBudget);
     try {
       const number = await loadNextBudgetNumber();
-      setBudget((current) => current.id === nextBudget.id ? { ...current, number } : current);
+      setBudget((current) =>
+        current.id === nextBudget.id ? { ...current, number } : current,
+      );
     } catch {
       notify("Não foi possível confirmar a próxima numeração", "error");
     }
@@ -714,39 +724,69 @@ export function BudgetApplication() {
   };
 
   const generateAndStorePdf = async () => {
-    const stockError = stockValidationError(budget);
-    if (stockError)
-      return notify(
-        `Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`,
+    try {
+      notify("Gerando PDF...");
+      const budgetAtSave = {
+        ...withDefaultItemUnit(budget),
+        createdAt: budget.createdAt || new Date().toISOString(),
+      };
+      const persisted = await saveBudgetToDatabase(budgetAtSave);
+      setBudget(persisted);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const element = document.getElementById("budget-pdf");
+      if (!element)
+        throw new Error("Pré-visualização do orçamento não encontrada");
+
+      const pdf = await createBudgetPdf(element, `${persisted.number}.pdf`);
+      await pdf.download();
+
+      try {
+        const pdfUrl = await savePdf(persisted.id, pdf.blob);
+        const updated = {
+          ...withDefaultItemUnit(persisted),
+          pdfUrl,
+          pdfSavedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        const next = [
+          updated,
+          ...saved.filter((item) => item.id !== updated.id),
+        ];
+        setBudget(updated);
+        setSaved(next);
+        await saveBudgetToDatabase(updated);
+        notify("Orçamento salvo e PDF baixado");
+      } catch (storageError) {
+        setSaved([
+          persisted,
+          ...saved.filter((item) => item.id !== persisted.id),
+        ]);
+        notify(
+          `PDF baixado, mas não foi possível armazená-lo online: ${(storageError as Error).message}`,
+          "error",
+        );
+      }
+    } catch (error) {
+      notify(
+        `Não foi possível gerar o PDF: ${(error as Error).message}`,
         "error",
       );
-    notify("Gerando PDF...");
-    const budgetAtSave = {
-      ...withDefaultItemUnit(budget),
-      createdAt: budget.createdAt || new Date().toISOString(),
-    };
-    const persisted = await saveBudgetToDatabase(budgetAtSave);
-    setBudget(persisted);
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-    );
+    }
+  };
+
+  const downloadPreviewPdf = async () => {
     const element = document.getElementById("budget-pdf");
-    if (!element) return;
-    const pdf = await createBudgetPdf(element, `${persisted.number}.pdf`);
-    const blob = pdf.blob;
-    const pdfUrl = await savePdf(persisted.id, blob);
-    const updated = {
-      ...withDefaultItemUnit(persisted),
-      pdfUrl,
-      pdfSavedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const next = [updated, ...saved.filter((item) => item.id !== updated.id)];
-    setBudget(updated);
-    setSaved(next);
-    await saveBudgetToDatabase(updated);
-    await pdf.download();
-    notify("Orçamento e PDF salvos");
+    if (!element) return notify("Pré-visualização não encontrada", "error");
+    notify("Gerando PDF...");
+    try {
+      const pdf = await createBudgetPdf(element, `${budget.number}.pdf`);
+      await pdf.download();
+      notify("PDF baixado");
+    } catch (error) {
+      notify(`Erro ao gerar PDF: ${(error as Error).message}`, "error");
+    }
   };
 
   const downloadStoredPdf = async (item: Budget) => {
@@ -768,7 +808,8 @@ export function BudgetApplication() {
       }
 
       const element = document.getElementById("budget-pdf");
-      if (!element) return notify("Não foi possível localizar o orçamento", "error");
+      if (!element)
+        return notify("Não foi possível localizar o orçamento", "error");
       notify("Gerando PDF...");
       const pdf = await createBudgetPdf(element, `${budget.number}.pdf`);
       await pdf.download();
@@ -837,7 +878,8 @@ export function BudgetApplication() {
             className={tab === "saved" ? "active" : ""}
             onClick={() => setTab("saved")}
           >
-            <i>▤</i>{isEmployee ? "Histórico" : "Orçamentos"}
+            <i>▤</i>
+            {isEmployee ? "Histórico" : "Orçamentos"}
           </button>
           <button
             className={tab === "clients" ? "active" : ""}
@@ -857,18 +899,22 @@ export function BudgetApplication() {
           >
             <i>▣</i>Estoque
           </button>
-          {!isEmployee && <button
-            className={tab === "billing" ? "active" : ""}
-            onClick={() => setTab("billing")}
-          >
-            <i>R$</i>Mensalidade
-          </button>}
-          {!isEmployee && <button
-            className={tab === "settings" ? "active" : ""}
-            onClick={() => setTab("settings")}
-          >
-            <i>⚙</i>Configurações
-          </button>}
+          {!isEmployee && (
+            <button
+              className={tab === "billing" ? "active" : ""}
+              onClick={() => setTab("billing")}
+            >
+              <i>R$</i>Mensalidade
+            </button>
+          )}
+          {!isEmployee && (
+            <button
+              className={tab === "settings" ? "active" : ""}
+              onClick={() => setTab("settings")}
+            >
+              <i>⚙</i>Configurações
+            </button>
+          )}
         </nav>
         <div className="sidebar-card">
           <span>Atalho rápido</span>
@@ -979,13 +1025,18 @@ export function BudgetApplication() {
                   Horário do salvamento
                   <input
                     className="creation-time-input"
-                    value={budget.createdAt
-                      ? new Date(budget.createdAt).toLocaleTimeString("pt-BR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })
-                      : "Será registrado ao salvar"}
+                    value={
+                      budget.createdAt
+                        ? new Date(budget.createdAt).toLocaleTimeString(
+                            "pt-BR",
+                            {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            },
+                          )
+                        : "Será registrado ao salvar"
+                    }
                     readOnly
                     aria-readonly="true"
                     title="Horário registrado automaticamente no primeiro salvamento"
@@ -1012,7 +1063,12 @@ export function BudgetApplication() {
                   <input
                     placeholder="Ex.: João da Silva"
                     value={budget.technicianName}
-                    onChange={(event) => setBudget({ ...budget, technicianName: event.target.value })}
+                    onChange={(event) =>
+                      setBudget({
+                        ...budget,
+                        technicianName: event.target.value,
+                      })
+                    }
                   />
                 </label>
               </div>
@@ -1270,33 +1326,35 @@ export function BudgetApplication() {
                   Status
                   <input value={budget.status} readOnly />
                 </label>
-                {!isEmployee && <div className="status-actions full">
-                  <span>Próxima etapa</span>
-                  {getAllowedNextStatuses(budget.status)
-                    .filter((status) => status !== "Recusado")
-                    .map((status) => (
+                {!isEmployee && (
+                  <div className="status-actions full">
+                    <span>Próxima etapa</span>
+                    {getAllowedNextStatuses(budget.status)
+                      .filter((status) => status !== "Recusado")
+                      .map((status) => (
+                        <button
+                          key={status}
+                          className="button primary"
+                          onClick={() => advanceStatus(status)}
+                        >
+                          Avançar para {status}
+                        </button>
+                      ))}
+                    {getAllowedNextStatuses(budget.status).includes(
+                      "Recusado",
+                    ) && (
                       <button
-                        key={status}
-                        className="button primary"
-                        onClick={() => advanceStatus(status)}
+                        className="button danger"
+                        onClick={() => advanceStatus("Recusado")}
                       >
-                        Avançar para {status}
+                        Marcar como recusado
                       </button>
-                    ))}
-                  {getAllowedNextStatuses(budget.status).includes(
-                    "Recusado",
-                  ) && (
-                    <button
-                      className="button danger"
-                      onClick={() => advanceStatus("Recusado")}
-                    >
-                      Marcar como recusado
-                    </button>
-                  )}
-                  {getAllowedNextStatuses(budget.status).length === 0 && (
-                    <strong>Status final: {budget.status}</strong>
-                  )}
-                </div>}
+                    )}
+                    {getAllowedNextStatuses(budget.status).length === 0 && (
+                      <strong>Status final: {budget.status}</strong>
+                    )}
+                  </div>
+                )}
                 <label className="full">
                   Observações
                   <textarea
@@ -1349,7 +1407,8 @@ export function BudgetApplication() {
                     )}
                   </small>
                   <small>
-                    Salvo às {budget.createdAt
+                    Salvo às{" "}
+                    {budget.createdAt
                       ? new Date(budget.createdAt).toLocaleTimeString("pt-BR", {
                           hour: "2-digit",
                           minute: "2-digit",
@@ -1476,18 +1535,22 @@ export function BudgetApplication() {
               <button className="button primary" onClick={downloadReadOnlyPdf}>
                 ↧ Baixar PDF
               </button>
-            ) : <button
-              className="button ghost"
-              onClick={() => setPreview(!preview)}
-            >
-              {preview ? "← Voltar para edição" : "◉ Visualizar"}
-            </button>}
-            {!historyReadOnly && <button className="button primary" onClick={saveBudget}>
-              ✓ Salvar orçamento
-            </button>}
+            ) : (
+              <button
+                className="button ghost"
+                onClick={() => setPreview(!preview)}
+              >
+                {preview ? "← Voltar para edição" : "◉ Visualizar"}
+              </button>
+            )}
+            {!historyReadOnly && (
+              <button className="button primary" onClick={saveBudget}>
+                ✓ Salvar orçamento
+              </button>
+            )}
             {!historyReadOnly && preview && (
-              <button className="button primary" onClick={generateAndStorePdf}>
-                ↧ Salvar e baixar PDF
+              <button className="button primary" onClick={downloadPreviewPdf}>
+                ↧ Baixar PDF
               </button>
             )}
           </div>
@@ -1604,12 +1667,14 @@ export function BudgetApplication() {
                     <button onClick={() => openBudget(item)}>
                       {isEmployee ? "Visualizar" : "Abrir"}
                     </button>
-                    {!isEmployee && <button
-                      className="delete-action"
-                      onClick={() => removeBudget(item)}
-                    >
-                      Excluir
-                    </button>}
+                    {!isEmployee && (
+                      <button
+                        className="delete-action"
+                        onClick={() => removeBudget(item)}
+                      >
+                        Excluir
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1650,118 +1715,128 @@ export function BudgetApplication() {
         )}
 
         {tab === "clients" && (
-          <section className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}>
-            {!isEmployee && <div className="card registry-form">
-              <div className="section-title">
-                <span>01</span>
-                <div>
-                  <h2>Cadastro de cliente</h2>
-                  <p>Dados armazenados para reutilização</p>
+          <section
+            className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}
+          >
+            {!isEmployee && (
+              <div className="card registry-form">
+                <div className="section-title">
+                  <span>01</span>
+                  <div>
+                    <h2>Cadastro de cliente</h2>
+                    <p>Dados armazenados para reutilização</p>
+                  </div>
                 </div>
+                <div className="form-grid">
+                  <label className="wide">
+                    Nome / Razão social
+                    <input
+                      value={clientDraft.name}
+                      onChange={(e) =>
+                        setClientDraft({ ...clientDraft, name: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    CPF / CNPJ
+                    <input
+                      value={clientDraft.document}
+                      onChange={(e) =>
+                        setClientDraft({
+                          ...clientDraft,
+                          document: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Telefone
+                    <input
+                      value={clientDraft.phone}
+                      onChange={(e) =>
+                        setClientDraft({
+                          ...clientDraft,
+                          phone: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    E-mail
+                    <input
+                      value={clientDraft.email}
+                      onChange={(e) =>
+                        setClientDraft({
+                          ...clientDraft,
+                          email: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Contato
+                    <input
+                      value={clientDraft.contact}
+                      onChange={(e) =>
+                        setClientDraft({
+                          ...clientDraft,
+                          contact: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="wide">
+                    Endereço
+                    <input
+                      value={clientDraft.address}
+                      onChange={(e) =>
+                        setClientDraft({
+                          ...clientDraft,
+                          address: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Cidade
+                    <input
+                      value={clientDraft.city}
+                      onChange={(e) =>
+                        setClientDraft({ ...clientDraft, city: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    UF
+                    <input
+                      maxLength={2}
+                      value={clientDraft.state}
+                      onChange={(e) =>
+                        setClientDraft({
+                          ...clientDraft,
+                          state: e.target.value.toUpperCase(),
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    CEP
+                    <input
+                      value={clientDraft.cep}
+                      onChange={(e) =>
+                        setClientDraft({ ...clientDraft, cep: e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+                <button
+                  className="button primary registry-save"
+                  onClick={registerClient}
+                >
+                  Salvar cliente
+                </button>
               </div>
-              <div className="form-grid">
-                <label className="wide">
-                  Nome / Razão social
-                  <input
-                    value={clientDraft.name}
-                    onChange={(e) =>
-                      setClientDraft({ ...clientDraft, name: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  CPF / CNPJ
-                  <input
-                    value={clientDraft.document}
-                    onChange={(e) =>
-                      setClientDraft({
-                        ...clientDraft,
-                        document: e.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Telefone
-                  <input
-                    value={clientDraft.phone}
-                    onChange={(e) =>
-                      setClientDraft({ ...clientDraft, phone: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  E-mail
-                  <input
-                    value={clientDraft.email}
-                    onChange={(e) =>
-                      setClientDraft({ ...clientDraft, email: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Contato
-                  <input
-                    value={clientDraft.contact}
-                    onChange={(e) =>
-                      setClientDraft({
-                        ...clientDraft,
-                        contact: e.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  Endereço
-                  <input
-                    value={clientDraft.address}
-                    onChange={(e) =>
-                      setClientDraft({
-                        ...clientDraft,
-                        address: e.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Cidade
-                  <input
-                    value={clientDraft.city}
-                    onChange={(e) =>
-                      setClientDraft({ ...clientDraft, city: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  UF
-                  <input
-                    maxLength={2}
-                    value={clientDraft.state}
-                    onChange={(e) =>
-                      setClientDraft({
-                        ...clientDraft,
-                        state: e.target.value.toUpperCase(),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  CEP
-                  <input
-                    value={clientDraft.cep}
-                    onChange={(e) =>
-                      setClientDraft({ ...clientDraft, cep: e.target.value })
-                    }
-                  />
-                </label>
-              </div>
-              <button
-                className="button primary registry-save"
-                onClick={registerClient}
-              >
-                Salvar cliente
-              </button>
-            </div>}
+            )}
             <div className="card registry-list">
               <h2>Clientes cadastrados</h2>
               {clients.map((client) => (
@@ -1773,7 +1848,11 @@ export function BudgetApplication() {
                       {client.phone || "Sem telefone"}
                     </small>
                   </div>
-                  {!isEmployee && <button onClick={() => setClientDraft(client)}>Editar</button>}
+                  {!isEmployee && (
+                    <button onClick={() => setClientDraft(client)}>
+                      Editar
+                    </button>
+                  )}
                 </div>
               ))}
               {!clients.length && (
@@ -1784,118 +1863,134 @@ export function BudgetApplication() {
         )}
 
         {tab === "services" && (
-          <section className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}>
-            {!isEmployee && <div
-              id="service-form"
-              tabIndex={-1}
-              className={`card registry-form service-form-card ${serviceDraft.id ? "is-editing" : ""}`}
-            >
-              <div className="section-title">
-                <span>02</span>
-                <div>
-                  <h2>
-                    {serviceDraft.id ? "Editar serviço" : "Cadastro de serviço"}
-                  </h2>
-                  <p>
-                    {serviceDraft.id
-                      ? `Altere os dados de ${serviceDraft.code} e clique em Atualizar serviço`
-                      : "Esta tabela será ligada aos IDs do backend"}
-                  </p>
+          <section
+            className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}
+          >
+            {!isEmployee && (
+              <div
+                id="service-form"
+                tabIndex={-1}
+                className={`card registry-form service-form-card ${serviceDraft.id ? "is-editing" : ""}`}
+              >
+                <div className="section-title">
+                  <span>02</span>
+                  <div>
+                    <h2>
+                      {serviceDraft.id
+                        ? "Editar serviço"
+                        : "Cadastro de serviço"}
+                    </h2>
+                    <p>
+                      {serviceDraft.id
+                        ? `Altere os dados de ${serviceDraft.code} e clique em Atualizar serviço`
+                        : "Esta tabela será ligada aos IDs do backend"}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              {serviceDraft.id && (
-                <div className="editing-service-notice">
-                  <strong>✎ Modo de edição ativo</strong>
-                  <span>Você está editando o serviço {serviceDraft.code}.</span>
-                </div>
-              )}
-              <div className="form-grid">
-                <label>
-                  Código
-                  <input
-                    placeholder="Ex.: SRV-001"
-                    value={serviceDraft.code}
-                    onChange={(e) =>
-                      setServiceDraft({
-                        ...serviceDraft,
-                        code: e.target.value.toUpperCase(),
-                      })
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  Serviço
-                  <input
-                    value={serviceDraft.description}
-                    onChange={(e) =>
-                      setServiceDraft({
-                        ...serviceDraft,
-                        description: e.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Unidade
-                  <input value="un." readOnly aria-label="Unidade do serviço" />
-                </label>
-                <label>
-                  Valor
-                  <input
-                    type="number"
-                    min="0"
-                    step=".01"
-                    value={serviceDraft.unitPrice || ""}
-                    onChange={(e) =>
-                      setServiceDraft({
-                        ...serviceDraft,
-                        unitPrice: Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <div className="service-form-actions">
-                <button
-                  className="button primary registry-save"
-                  onClick={registerService}
-                >
-                  {serviceDraft.id ? "✓ Atualizar serviço" : "Salvar serviço"}
-                </button>
                 {serviceDraft.id && (
-                  <button
-                    className="button ghost registry-save"
-                    onClick={clearServiceDraft}
-                  >
-                    Cancelar edição
-                  </button>
+                  <div className="editing-service-notice">
+                    <strong>✎ Modo de edição ativo</strong>
+                    <span>
+                      Você está editando o serviço {serviceDraft.code}.
+                    </span>
+                  </div>
                 )}
+                <div className="form-grid">
+                  <label>
+                    Código
+                    <input
+                      placeholder="Ex.: SRV-001"
+                      value={serviceDraft.code}
+                      onChange={(e) =>
+                        setServiceDraft({
+                          ...serviceDraft,
+                          code: e.target.value.toUpperCase(),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="wide">
+                    Serviço
+                    <input
+                      value={serviceDraft.description}
+                      onChange={(e) =>
+                        setServiceDraft({
+                          ...serviceDraft,
+                          description: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Unidade
+                    <input
+                      value="un."
+                      readOnly
+                      aria-label="Unidade do serviço"
+                    />
+                  </label>
+                  <label>
+                    Valor
+                    <input
+                      type="number"
+                      min="0"
+                      step=".01"
+                      value={serviceDraft.unitPrice || ""}
+                      onChange={(e) =>
+                        setServiceDraft({
+                          ...serviceDraft,
+                          unitPrice: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="service-form-actions">
+                  <button
+                    className="button primary registry-save"
+                    onClick={registerService}
+                  >
+                    {serviceDraft.id ? "✓ Atualizar serviço" : "Salvar serviço"}
+                  </button>
+                  {serviceDraft.id && (
+                    <button
+                      className="button ghost registry-save"
+                      onClick={clearServiceDraft}
+                    >
+                      Cancelar edição
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>}
+            )}
             <div className="card registry-list">
               <div className="registry-title">
                 <h2>Planilha de serviços</h2>
-                {!isEmployee && <div className="registry-actions">
-                  <button
-                    className="button ghost"
-                    disabled={!services.length}
-                    onClick={downloadServicesPdf}
-                  >
-                    ↧ Gerar PDF
-                  </button>
-                  <button
-                    className="button soft"
-                    onClick={() => {
-                      clearServiceDraft();
-                      document.getElementById("service-form")?.scrollIntoView({
-                        behavior: "smooth",
-                        block: "start",
-                      });
-                    }}
-                  >
-                    ＋ Adicionar serviço
-                  </button>
-                </div>}
+                {!isEmployee && (
+                  <div className="registry-actions">
+                    <button
+                      className="button ghost"
+                      disabled={!services.length}
+                      onClick={downloadServicesPdf}
+                    >
+                      ↧ Gerar PDF
+                    </button>
+                    <button
+                      className="button soft"
+                      onClick={() => {
+                        clearServiceDraft();
+                        document
+                          .getElementById("service-form")
+                          ?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
+                      }}
+                    >
+                      ＋ Adicionar serviço
+                    </button>
+                  </div>
+                )}
               </div>
               <div id="service-pdf" className="services-paper">
                 <div className="services-paper-head">
@@ -1916,7 +2011,9 @@ export function BudgetApplication() {
                   <span>Serviço</span>
                   <span>Unidade</span>
                   <span>Valor</span>
-                  {!isEmployee && <span className="service-actions-label">Ações</span>}
+                  {!isEmployee && (
+                    <span className="service-actions-label">Ações</span>
+                  )}
                 </div>
                 {services.map((service) => (
                   <div
@@ -1929,25 +2026,27 @@ export function BudgetApplication() {
                     </div>
                     <span>{service.unit}</span>
                     <b>{money(service.unitPrice)}</b>
-                    {!isEmployee && <div className="service-actions">
-                      <button
-                        className="add-to-budget"
-                        onClick={() => addServiceToBudget(service)}
-                      >
-                        ＋ Orçamento
-                      </button>
-                      <button onClick={() => editService(service)}>
-                        {serviceDraft.id === service.id
-                          ? "Editando..."
-                          : "Editar"}
-                      </button>
-                      <button
-                        className="delete-service"
-                        onClick={() => removeService(service)}
-                      >
-                        Excluir
-                      </button>
-                    </div>}
+                    {!isEmployee && (
+                      <div className="service-actions">
+                        <button
+                          className="add-to-budget"
+                          onClick={() => addServiceToBudget(service)}
+                        >
+                          ＋ Orçamento
+                        </button>
+                        <button onClick={() => editService(service)}>
+                          {serviceDraft.id === service.id
+                            ? "Editando..."
+                            : "Editar"}
+                        </button>
+                        <button
+                          className="delete-service"
+                          onClick={() => removeService(service)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 <footer>{services.length} serviço(s) cadastrado(s)</footer>
@@ -1962,100 +2061,106 @@ export function BudgetApplication() {
         )}
 
         {tab === "stock" && (
-          <section className={`registry-layout stock-layout ${isEmployee ? "read-only-registry" : ""}`}>
-            {!isEmployee && <div
-              className={`card registry-form ${partDraft.id ? "is-editing" : ""}`}
-            >
-              <div className="section-title">
-                <span>▣</span>
-                <div>
-                  <h2>
-                    {partDraft.id ? "Editar peça" : "Adicionar peça ao estoque"}
-                  </h2>
-                  <p>Cadastre peças disponíveis para venda nos orçamentos</p>
+          <section
+            className={`registry-layout stock-layout ${isEmployee ? "read-only-registry" : ""}`}
+          >
+            {!isEmployee && (
+              <div
+                className={`card registry-form ${partDraft.id ? "is-editing" : ""}`}
+              >
+                <div className="section-title">
+                  <span>▣</span>
+                  <div>
+                    <h2>
+                      {partDraft.id
+                        ? "Editar peça"
+                        : "Adicionar peça ao estoque"}
+                    </h2>
+                    <p>Cadastre peças disponíveis para venda nos orçamentos</p>
+                  </div>
                 </div>
-              </div>
-              {partDraft.id && (
-                <div className="editing-service-notice">
-                  <strong>✎ Modo de edição ativo</strong>
-                  <span>Atualize os dados de {partDraft.code}.</span>
-                </div>
-              )}
-              <div className="form-grid">
-                <label>
-                  Código
-                  <input
-                    placeholder="Ex.: PEC-001"
-                    value={partDraft.code}
-                    onChange={(event) =>
-                      setPartDraft({
-                        ...partDraft,
-                        code: event.target.value.toUpperCase(),
-                      })
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  Peça
-                  <input
-                    placeholder="Nome ou descrição da peça"
-                    value={partDraft.description}
-                    onChange={(event) =>
-                      setPartDraft({
-                        ...partDraft,
-                        description: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Quantidade em estoque
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={partDraft.stockQuantity || ""}
-                    onChange={(event) =>
-                      setPartDraft({
-                        ...partDraft,
-                        stockQuantity: Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Valor de venda
-                  <input
-                    type="number"
-                    min="0"
-                    step=".01"
-                    value={partDraft.unitPrice || ""}
-                    onChange={(event) =>
-                      setPartDraft({
-                        ...partDraft,
-                        unitPrice: Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <div className="service-form-actions">
-                <button
-                  className="button primary registry-save"
-                  onClick={registerPart}
-                >
-                  {partDraft.id ? "✓ Atualizar peça" : "＋ Salvar peça"}
-                </button>
                 {partDraft.id && (
-                  <button
-                    className="button ghost registry-save"
-                    onClick={clearPartDraft}
-                  >
-                    Cancelar edição
-                  </button>
+                  <div className="editing-service-notice">
+                    <strong>✎ Modo de edição ativo</strong>
+                    <span>Atualize os dados de {partDraft.code}.</span>
+                  </div>
                 )}
+                <div className="form-grid">
+                  <label>
+                    Código
+                    <input
+                      placeholder="Ex.: PEC-001"
+                      value={partDraft.code}
+                      onChange={(event) =>
+                        setPartDraft({
+                          ...partDraft,
+                          code: event.target.value.toUpperCase(),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="wide">
+                    Peça
+                    <input
+                      placeholder="Nome ou descrição da peça"
+                      value={partDraft.description}
+                      onChange={(event) =>
+                        setPartDraft({
+                          ...partDraft,
+                          description: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Quantidade em estoque
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={partDraft.stockQuantity || ""}
+                      onChange={(event) =>
+                        setPartDraft({
+                          ...partDraft,
+                          stockQuantity: Number(event.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Valor de venda
+                    <input
+                      type="number"
+                      min="0"
+                      step=".01"
+                      value={partDraft.unitPrice || ""}
+                      onChange={(event) =>
+                        setPartDraft({
+                          ...partDraft,
+                          unitPrice: Number(event.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="service-form-actions">
+                  <button
+                    className="button primary registry-save"
+                    onClick={registerPart}
+                  >
+                    {partDraft.id ? "✓ Atualizar peça" : "＋ Salvar peça"}
+                  </button>
+                  {partDraft.id && (
+                    <button
+                      className="button ghost registry-save"
+                      onClick={clearPartDraft}
+                    >
+                      Cancelar edição
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>}
+            )}
             <div className="card registry-list">
               <div className="registry-title">
                 <div>
@@ -2064,9 +2169,11 @@ export function BudgetApplication() {
                     A baixa ocorre somente quando o orçamento é aprovado.
                   </p>
                 </div>
-                {!isEmployee && <button className="button soft" onClick={clearPartDraft}>
-                  ＋ Nova peça
-                </button>}
+                {!isEmployee && (
+                  <button className="button soft" onClick={clearPartDraft}>
+                    ＋ Nova peça
+                  </button>
+                )}
               </div>
               <div className="stock-summary">
                 <div>
@@ -2109,22 +2216,26 @@ export function BudgetApplication() {
                     >
                       {part.stockQuantity > 0 ? "Disponível" : "Indisponível"}
                     </em>
-                    {!isEmployee && <div className="stock-actions">
-                      <button
-                        className="add-to-budget"
-                        disabled={part.stockQuantity <= 0}
-                        onClick={() => addPartToBudget(part)}
-                      >
-                        ＋ Orçamento
-                      </button>
-                      <button onClick={() => setPartDraft(part)}>Editar</button>
-                      <button
-                        className="delete-service"
-                        onClick={() => removePart(part)}
-                      >
-                        Excluir
-                      </button>
-                    </div>}
+                    {!isEmployee && (
+                      <div className="stock-actions">
+                        <button
+                          className="add-to-budget"
+                          disabled={part.stockQuantity <= 0}
+                          onClick={() => addPartToBudget(part)}
+                        >
+                          ＋ Orçamento
+                        </button>
+                        <button onClick={() => setPartDraft(part)}>
+                          Editar
+                        </button>
+                        <button
+                          className="delete-service"
+                          onClick={() => removePart(part)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {!parts.length && (
@@ -2143,209 +2254,270 @@ export function BudgetApplication() {
         {tab === "settings" && (
           <section className="settings-layout">
             <div className="settings-menu card">
-              <button className={settingsSection === "company" ? "active" : ""} onClick={() => setSettingsSection("company")}>Empresa</button>
-              <button className={settingsSection === "password" ? "active" : ""} onClick={() => setSettingsSection("password")}>Alterar senha</button>
-              <button className={settingsSection === "email" ? "active" : ""} onClick={() => setSettingsSection("email")}>Alterar e-mail</button>
+              <button
+                className={settingsSection === "company" ? "active" : ""}
+                onClick={() => setSettingsSection("company")}
+              >
+                Empresa
+              </button>
+              <button
+                className={settingsSection === "password" ? "active" : ""}
+                onClick={() => setSettingsSection("password")}
+              >
+                Alterar senha
+              </button>
+              <button
+                className={settingsSection === "email" ? "active" : ""}
+                onClick={() => setSettingsSection("email")}
+              >
+                Alterar e-mail
+              </button>
             </div>
-            {settingsSection === "company" && <div className="card settings-form">
-              <div className="section-title">
-                <span>ID</span>
-                <div>
-                  <h2>Dados da empresa</h2>
-                  <p>Estas informações aparecem no orçamento</p>
+            {settingsSection === "company" && (
+              <div className="card settings-form">
+                <div className="section-title">
+                  <span>ID</span>
+                  <div>
+                    <h2>Dados da empresa</h2>
+                    <p>Estas informações aparecem no orçamento</p>
+                  </div>
                 </div>
-              </div>
-              <div className="logo-upload">
-                <img
-                  src={brandLogo}
-                  alt={`Logo de ${appSettings.companyName}`}
-                />
-                <div>
-                  <strong>Logotipo da empresa</strong>
-                  <p>
-                    {appSettings.logoDataUrl
-                      ? "Logo personalizada aplicada ao sistema e aos PDFs."
-                      : "Esta é a logo padrão. Troque pela logo da sua marca."}
-                  </p>
-                  <input
-                    ref={logoInputRef}
-                    className="logo-file-input"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                    onChange={(event) => chooseLogo(event.target.files?.[0])}
+                <div className="logo-upload">
+                  <img
+                    src={brandLogo}
+                    alt={`Logo de ${appSettings.companyName}`}
                   />
-                  <button
-                    className="button ghost"
-                    onClick={() => logoInputRef.current?.click()}
-                  >
-                    {appSettings.logoDataUrl
-                      ? "Alterar logotipo"
-                      : "Escolher minha logo"}
-                  </button>
-                  {appSettings.logoDataUrl && (
+                  <div>
+                    <strong>Logotipo da empresa</strong>
+                    <p>
+                      {appSettings.logoDataUrl
+                        ? "Logo personalizada aplicada ao sistema e aos PDFs."
+                        : "Esta é a logo padrão. Troque pela logo da sua marca."}
+                    </p>
+                    <input
+                      ref={logoInputRef}
+                      className="logo-file-input"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={(event) => chooseLogo(event.target.files?.[0])}
+                    />
                     <button
-                      className="button danger remove-logo-button"
-                      onClick={() => updateAppSetting("logoDataUrl", "")}
+                      className="button ghost"
+                      onClick={() => logoInputRef.current?.click()}
                     >
-                      Usar logo padrão
+                      {appSettings.logoDataUrl
+                        ? "Alterar logotipo"
+                        : "Escolher minha logo"}
                     </button>
-                  )}
+                    {appSettings.logoDataUrl && (
+                      <button
+                        className="button danger remove-logo-button"
+                        onClick={() => updateAppSetting("logoDataUrl", "")}
+                      >
+                        Usar logo padrão
+                      </button>
+                    )}
+                  </div>
                 </div>
+                <div className="form-grid">
+                  <label>
+                    Nome da empresa
+                    <input
+                      value={appSettings.companyName}
+                      onChange={(event) =>
+                        updateAppSetting("companyName", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Nome do sistema
+                    <input
+                      value={appSettings.appName}
+                      onChange={(event) =>
+                        updateAppSetting("appName", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Segmento
+                    <input
+                      value={appSettings.segment}
+                      onChange={(event) =>
+                        updateAppSetting("segment", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    CNPJ
+                    <input
+                      value={appSettings.document}
+                      onChange={(event) =>
+                        updateAppSetting("document", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Telefone
+                    <input
+                      value={appSettings.phone}
+                      onChange={(event) =>
+                        updateAppSetting("phone", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    E-mail
+                    <input
+                      value={appSettings.email}
+                      onChange={(event) =>
+                        updateAppSetting("email", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label className="full">
+                    Endereço
+                    <input
+                      value={appSettings.address}
+                      onChange={(event) =>
+                        updateAppSetting("address", event.target.value)
+                      }
+                    />
+                  </label>
+                </div>
+                <button className="button primary" onClick={saveAppSettings}>
+                  Salvar alterações
+                </button>
               </div>
-              <div className="form-grid">
-                <label>
-                  Nome da empresa
-                  <input
-                    value={appSettings.companyName}
-                    onChange={(event) =>
-                      updateAppSetting("companyName", event.target.value)
-                    }
-                  />
-                </label>
-                <label>
-                  Nome do sistema
-                  <input
-                    value={appSettings.appName}
-                    onChange={(event) =>
-                      updateAppSetting("appName", event.target.value)
-                    }
-                  />
-                </label>
-                <label>
-                  Segmento
-                  <input
-                    value={appSettings.segment}
-                    onChange={(event) =>
-                      updateAppSetting("segment", event.target.value)
-                    }
-                  />
-                </label>
-                <label>
-                  CNPJ
-                  <input
-                    value={appSettings.document}
-                    onChange={(event) =>
-                      updateAppSetting("document", event.target.value)
-                    }
-                  />
-                </label>
-                <label>
-                  Telefone
-                  <input
-                    value={appSettings.phone}
-                    onChange={(event) =>
-                      updateAppSetting("phone", event.target.value)
-                    }
-                  />
-                </label>
-                <label>
-                  E-mail
-                  <input
-                    value={appSettings.email}
-                    onChange={(event) =>
-                      updateAppSetting("email", event.target.value)
-                    }
-                  />
-                </label>
-                <label className="full">
-                  Endereço
-                  <input
-                    value={appSettings.address}
-                    onChange={(event) =>
-                      updateAppSetting("address", event.target.value)
-                    }
-                  />
-                </label>
-              </div>
-              <button className="button primary" onClick={saveAppSettings}>
-                Salvar alterações
-              </button>
-            </div>}
+            )}
 
-            {settingsSection === "password" && <div className="card settings-form security-settings-form">
-              <div className="section-title">
-                <span>🔒</span>
-                <div>
-                  <h2>Alterar senha</h2>
-                  <p>Atualize a senha usada para acessar o painel administrativo</p>
+            {settingsSection === "password" && (
+              <div className="card settings-form security-settings-form">
+                <div className="section-title">
+                  <span>🔒</span>
+                  <div>
+                    <h2>Alterar senha</h2>
+                    <p>
+                      Atualize a senha usada para acessar o painel
+                      administrativo
+                    </p>
+                  </div>
                 </div>
+                <div className="security-fields">
+                  <label>
+                    Senha atual
+                    <PasswordInput
+                      autoComplete="current-password"
+                      value={currentPassword}
+                      onChange={(event) =>
+                        setCurrentPassword(event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Nova senha
+                    <PasswordInput
+                      autoComplete="new-password"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Confirmar nova senha
+                    <PasswordInput
+                      autoComplete="new-password"
+                      value={confirmPassword}
+                      onChange={(event) =>
+                        setConfirmPassword(event.target.value)
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="password-validation" aria-live="polite">
+                  <strong>A nova senha precisa ter:</strong>
+                  <span className={passwordChecks.length ? "valid" : ""}>
+                    ✓ Pelo menos 8 caracteres
+                  </span>
+                  <span className={passwordChecks.uppercase ? "valid" : ""}>
+                    ✓ Uma letra maiúscula
+                  </span>
+                  <span className={passwordChecks.lowercase ? "valid" : ""}>
+                    ✓ Uma letra minúscula
+                  </span>
+                  <span className={passwordChecks.number ? "valid" : ""}>
+                    ✓ Um número
+                  </span>
+                  <span className={passwordChecks.special ? "valid" : ""}>
+                    ✓ Um caractere especial
+                  </span>
+                  <span
+                    className={
+                      confirmPassword && confirmPassword === newPassword
+                        ? "valid"
+                        : ""
+                    }
+                  >
+                    ✓ Confirmação igual à nova senha
+                  </span>
+                </div>
+                <button
+                  className="button primary"
+                  disabled={securitySaving}
+                  onClick={saveNewPassword}
+                >
+                  {securitySaving ? "Alterando..." : "Alterar senha"}
+                </button>
               </div>
-              <div className="security-fields">
-                <label>
-                  Senha atual
-                  <PasswordInput
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Nova senha
-                  <PasswordInput
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Confirmar nova senha
-                  <PasswordInput
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                  />
-                </label>
-              </div>
-              <div className="password-validation" aria-live="polite">
-                <strong>A nova senha precisa ter:</strong>
-                <span className={passwordChecks.length ? "valid" : ""}>✓ Pelo menos 8 caracteres</span>
-                <span className={passwordChecks.uppercase ? "valid" : ""}>✓ Uma letra maiúscula</span>
-                <span className={passwordChecks.lowercase ? "valid" : ""}>✓ Uma letra minúscula</span>
-                <span className={passwordChecks.number ? "valid" : ""}>✓ Um número</span>
-                <span className={passwordChecks.special ? "valid" : ""}>✓ Um caractere especial</span>
-                <span className={confirmPassword && confirmPassword === newPassword ? "valid" : ""}>✓ Confirmação igual à nova senha</span>
-              </div>
-              <button className="button primary" disabled={securitySaving} onClick={saveNewPassword}>
-                {securitySaving ? "Alterando..." : "Alterar senha"}
-              </button>
-            </div>}
+            )}
 
-            {settingsSection === "email" && <div className="card settings-form security-settings-form">
-              <div className="section-title">
-                <span>✉</span>
-                <div>
-                  <h2>Alterar e-mail</h2>
-                  <p>O novo endereço será usado no próximo acesso ao sistema</p>
+            {settingsSection === "email" && (
+              <div className="card settings-form security-settings-form">
+                <div className="section-title">
+                  <span>✉</span>
+                  <div>
+                    <h2>Alterar e-mail</h2>
+                    <p>
+                      O novo endereço será usado no próximo acesso ao sistema
+                    </p>
+                  </div>
                 </div>
+                <div className="security-fields email-security-fields">
+                  <label>
+                    Novo e-mail
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      placeholder="novo@email.com"
+                      value={newAccountEmail}
+                      onChange={(event) =>
+                        setNewAccountEmail(event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Senha atual para confirmar
+                    <PasswordInput
+                      autoComplete="current-password"
+                      value={emailPassword}
+                      onChange={(event) => setEmailPassword(event.target.value)}
+                    />
+                  </label>
+                </div>
+                <div className="security-notice">
+                  <strong>Confirmação de segurança</strong>
+                  <span>
+                    O Supabase enviará uma confirmação para o novo endereço. A
+                    troca será concluída depois da confirmação.
+                  </span>
+                </div>
+                <button
+                  className="button primary"
+                  disabled={securitySaving}
+                  onClick={saveNewEmail}
+                >
+                  {securitySaving ? "Enviando..." : "Alterar e-mail"}
+                </button>
               </div>
-              <div className="security-fields email-security-fields">
-                <label>
-                  Novo e-mail
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    placeholder="novo@email.com"
-                    value={newAccountEmail}
-                    onChange={(event) => setNewAccountEmail(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Senha atual para confirmar
-                  <PasswordInput
-                    autoComplete="current-password"
-                    value={emailPassword}
-                    onChange={(event) => setEmailPassword(event.target.value)}
-                  />
-                </label>
-              </div>
-              <div className="security-notice">
-                <strong>Confirmação de segurança</strong>
-                <span>O Supabase enviará uma confirmação para o novo endereço. A troca será concluída depois da confirmação.</span>
-              </div>
-              <button className="button primary" disabled={securitySaving} onClick={saveNewEmail}>
-                {securitySaving ? "Enviando..." : "Alterar e-mail"}
-              </button>
-            </div>}
+            )}
           </section>
         )}
       </main>
