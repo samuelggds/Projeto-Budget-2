@@ -1,14 +1,14 @@
 -- TESTE: Sistema BLOQUEADO com mensalidade de R$ 1,00
--- Simula assinatura vencida + período de graça expirado → sistema bloqueado.
--- Execute no Supabase SQL Editor. Reverta com test-billing-reset.sql.
+-- Execute diretamente OU após test-billing-grace.sql.
+-- Se executar diretamente: abra o app e aguarde o QR aparecer (polling de 10s não roda em BLOCKED).
+-- Reverta com test-billing-reset.sql.
 
 begin;
 
--- Remove faturas de teste anteriores para evitar conflito no unique
-delete from public.subscription_invoices
-where external_reference like 'TEST-%';
+-- Remove todas as faturas pendentes para evitar duplicatas
+delete from public.subscription_invoices where status = 'PENDING';
 
--- Coloca a assinatura em estado BLOQUEADO com R$ 1,00
+-- Coloca a assinatura em estado BLOQUEADO com todos os campos obrigatórios
 update public.app_subscription
 set
   status                    = 'BLOCKED',
@@ -24,40 +24,29 @@ set
   updated_at                = now()
 where id = 'main';
 
--- Cria fatura PENDENTE de R$ 1,00 (o app gera o QR code ao abrir a tela de pagamento)
+-- Insere fatura PENDENTE — o QR code aparecerá depois de clicar "Atualizar cobrança" na tela de billing admin
+-- (A tela de bloqueio não chama a função automaticamente; acesse /mensalidade como BILLING_ADMIN)
 insert into public.subscription_invoices (
-  subscription_id,
-  external_reference,
-  status,
-  amount,
-  period_started_at,
-  period_ends_at,
-  due_at,
-  grace_period_ends_at,
-  created_at,
-  updated_at
+  subscription_id, external_reference, status, amount,
+  period_started_at, period_ends_at, due_at, grace_period_ends_at
 ) values (
   'main',
-  'TEST-BLOCKED-' || to_char(now(), 'YYYYMMDD-HH24MISS'),
+  'mg-monthly-' || to_char(now() - interval '10 days', 'YYYYMMDDHHMI24SS'),
   'PENDING',
   1.00,
   now() - interval '40 days',
   now() - interval '10 days',
   now() - interval '10 days',
-  now() - interval '3 days',
-  now(),
-  now()
-);
+  now() - interval '3 days'
+) on conflict (external_reference) do nothing;
 
 commit;
 
 -- Conferência
 select status, monthly_amount, billing_enabled,
        current_period_ends_at, grace_period_ends_at, blocked_at
-from public.app_subscription
-where id = 'main';
+from public.app_subscription where id = 'main';
 
-select id, status, amount, due_at, external_reference
-from public.subscription_invoices
-order by created_at desc
-limit 3;
+select external_reference, status, amount, pix_qr_code is not null as tem_qr
+from public.subscription_invoices order by created_at desc limit 3;
+
