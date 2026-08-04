@@ -1,6 +1,14 @@
-import { BudgetApplication } from './modules/budgets/components/BudgetApplication'
-import { AuthGate } from './modules/auth/components/AuthGate'
+import { BudgetApplication } from "./modules/budgets/components/BudgetApplication";
+import { AuthGate } from "./modules/auth/components/AuthGate";
+import { AppNotifications } from "./modules/shared/components/AppNotifications";
 
 export default function App() {
-  return <AuthGate><BudgetApplication /></AuthGate>
+  return (
+    <>
+      <AppNotifications />
+      <AuthGate>
+        <BudgetApplication />
+      </AuthGate>
+    </>
+  );
 }
