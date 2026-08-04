@@ -5,6 +5,8 @@ import { supabase } from "../../auth/services/supabase";
 import type { AppSettings } from "../../settings/types/AppSettings";
 import { DEFAULT_APP_SETTINGS } from "../../settings/types/AppSettings";
 import type { Part } from "../../stock/types/Part";
+import type { Supplier } from "../../suppliers/types/Supplier";
+import type { Employee } from "../../employees/types/Employee";
 
 type DatabaseStatus = "ENVIADO" | "RECUSADO" | "EM_ANDAMENTO" | "APROVADO" | "PAGO";
 
@@ -57,6 +59,34 @@ function mapPart(row: Record<string, unknown>): Part {
   return {
     id: text(row.id), code: text(row.code), description: text(row.description),
     stockQuantity: number(row.stock_quantity), unitPrice: number(row.unit_price),
+  };
+}
+
+function mapSupplier(row: Record<string, unknown>): Supplier {
+  return {
+    id: text(row.id),
+    name: text(row.name),
+    document: text(row.document),
+    phone: text(row.phone),
+    paymentMethod: text(row.payment_method),
+    pixKey: text(row.pix_key),
+    paymentDate: text(row.payment_date),
+    createdAt: text(row.created_at),
+    updatedAt: text(row.updated_at),
+  };
+}
+
+function mapEmployee(row: Record<string, unknown>): Employee {
+  return {
+    id: text(row.id),
+    name: text(row.name),
+    document: text(row.document),
+    phone: text(row.phone),
+    paymentMethod: text(row.payment_method),
+    pixKey: text(row.pix_key),
+    paymentDate: text(row.payment_date),
+    createdAt: text(row.created_at),
+    updatedAt: text(row.updated_at),
   };
 }
 
@@ -128,6 +158,66 @@ export async function savePartToDatabase(part: Part) {
 
 export async function deletePartFromDatabase(id: string) {
   const { error } = await supabase.from("parts").delete().eq("id", id);
+  assertNoError(error);
+}
+
+export async function loadSuppliersFromDatabase() {
+  const { data, error } = await supabase
+    .from("suppliers")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  assertNoError(error);
+  return (data || []).map((row) => mapSupplier(row as Record<string, unknown>));
+}
+
+export async function saveSupplierToDatabase(supplier: Supplier) {
+  const updatedAt = new Date().toISOString();
+  const { data, error } = await supabase.from("suppliers").upsert({
+    id: supplier.id,
+    name: supplier.name.trim(),
+    document: supplier.document.trim() || null,
+    phone: supplier.phone.trim() || null,
+    payment_method: supplier.paymentMethod || null,
+    pix_key: supplier.pixKey.trim() || null,
+    payment_date: supplier.paymentDate || null,
+    updated_at: updatedAt,
+  }).select().single();
+  assertNoError(error);
+  return mapSupplier(data as Record<string, unknown>);
+}
+
+export async function deleteSupplierFromDatabase(id: string) {
+  const { error } = await supabase.from("suppliers").delete().eq("id", id);
+  assertNoError(error);
+}
+
+export async function loadEmployeesFromDatabase() {
+  const { data, error } = await supabase
+    .from("employees")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  assertNoError(error);
+  return (data || []).map((row) => mapEmployee(row as Record<string, unknown>));
+}
+
+export async function saveEmployeeToDatabase(employee: Employee) {
+  const updatedAt = new Date().toISOString();
+  const { data, error } = await supabase.from("employees").upsert({
+    id: employee.id,
+    name: employee.name.trim(),
+    document: employee.document.trim() || null,
+    phone: employee.phone.trim() || null,
+    payment_method: employee.paymentMethod || null,
+    pix_key: employee.pixKey.trim() || null,
+    payment_date: employee.paymentDate || null,
+    updated_at: updatedAt,
+  }).select().single();
+  assertNoError(error);
+  return mapEmployee(data as Record<string, unknown>);
+}
+
+export async function deleteEmployeeFromDatabase(id: string) {
+  const { error } = await supabase.from("employees").delete().eq("id", id);
   assertNoError(error);
 }
 

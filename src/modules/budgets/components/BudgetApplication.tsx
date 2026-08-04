@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Budget, BudgetItem as Item } from "../types/Budget";
-import { deletePdf, getPdf } from "../../pdf/services/pdfStorage";
+import { deletePdf, getPdf, savePdf } from "../../pdf/services/pdfStorage";
 import {
   createInitialBudget,
   createNextBudget,
@@ -14,24 +14,26 @@ import { createBudgetPdf, downloadPdfBlob } from "../../pdf/services/budgetPdf";
 import type { Client } from "../../clients/types/Client";
 import type { Service } from "../../services/types/Service";
 import { getAllowedNextStatuses } from "../services/budgetStatus";
-import {
-  changeAccountEmail,
-  changeAccountPassword,
-  supabase,
-} from "../../auth/services/supabase";
+import { changeAccountEmail, changeAccountPassword, supabase } from "../../auth/services/supabase";
 import {
   approveBudgetAndDeductStock,
   deleteBudgetFromDatabase,
+  deleteEmployeeFromDatabase,
   deletePartFromDatabase,
   deleteServiceFromDatabase,
+  deleteSupplierFromDatabase,
   loadDatabase,
+  loadEmployeesFromDatabase,
   loadNextBudgetNumber,
   loadPartsFromDatabase,
+  loadSuppliersFromDatabase,
   saveAppSettingsToDatabase,
   saveBudgetToDatabase,
   saveClientToDatabase,
   savePartToDatabase,
   saveServiceToDatabase,
+  saveEmployeeToDatabase,
+  saveSupplierToDatabase,
 } from "../../shared/services/supabaseDatabase";
 import { SmoothSelect } from "../../shared/components/SmoothSelect";
 import {
@@ -42,17 +44,77 @@ import type { Part } from "../../stock/types/Part";
 import { BillingOverview } from "../../billing/components/BillingOverview";
 import { useAppRole } from "../../auth/context/appAccessContext";
 import { PasswordInput } from "../../shared/components/PasswordInput";
+import type { Supplier } from "../../suppliers/types/Supplier";
+import type { Employee } from "../../employees/types/Employee";
 
 const withDefaultItemUnit = (current: Budget): Budget => ({
   ...current,
   items: current.items.map((item) => ({ ...item, unit: "un." })),
 });
 
+const onlyDigits = (value: string) => value.replace(/\D/g, "");
+
+function hasValidCpf(value: string) {
+  const cpf = onlyDigits(value);
+  if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
+  const digit = (length: number) => {
+    const sum = cpf.slice(0, length).split("").reduce(
+      (total, numberValue, index) => total + Number(numberValue) * (length + 1 - index),
+      0,
+    );
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+  return digit(9) === Number(cpf[9]) && digit(10) === Number(cpf[10]);
+}
+
+function hasValidCnpj(value: string) {
+  const cnpj = onlyDigits(value);
+  if (cnpj.length !== 14 || /^(\d)\1+$/.test(cnpj)) return false;
+  const calculateDigit = (base: string, weights: number[]) => {
+    const sum = base.split("").reduce(
+      (total, numberValue, index) => total + Number(numberValue) * weights[index],
+      0,
+    );
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+  const first = calculateDigit(cnpj.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const second = calculateDigit(`${cnpj.slice(0, 12)}${first}`, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return first === Number(cnpj[12]) && second === Number(cnpj[13]);
+}
+
+const hasValidDocument = (value: string) => hasValidCpf(value) || hasValidCnpj(value);
+const hasValidPhone = (value: string) => {
+  const phone = onlyDigits(value);
+  return (phone.length === 10 || phone.length === 11) && !/^(\d)\1+$/.test(phone);
+};
+const hasValidPixKey = (value: string) => {
+  const key = value.trim();
+  if (!key) return false;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key)) return true;
+  if (hasValidDocument(key) || hasValidPhone(key)) return true;
+  return key.length >= 8 && key.length <= 77 && !/\s/.test(key);
+};
+
+type PaymentRegistration = Pick<Supplier, "name" | "document" | "phone" | "paymentMethod" | "pixKey" | "paymentDate">;
+
+function validatePaymentRegistration(data: PaymentRegistration, label: string) {
+  if (data.name.trim().length < 3) return `Informe um nome válido para ${label}`;
+  if (!hasValidDocument(data.document)) return "Informe um CPF ou CNPJ válido";
+  if (!hasValidPhone(data.phone)) return "Informe um telefone válido com DDD";
+  if (!data.paymentMethod) return "Selecione a forma de pagamento";
+  if (!hasValidPixKey(data.pixKey)) return "Informe uma chave Pix válida";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.paymentDate)) return "Informe a data de pagamento";
+  return "";
+}
+
 export function BudgetApplication() {
   const appRole = useAppRole();
   const isEmployee = appRole === "FUNCIONARIO";
   const [tab, setTab] = useState<
-    "new" | "saved" | "clients" | "services" | "stock" | "billing" | "settings"
+    "new" | "saved" | "clients" | "services" | "stock" | "suppliers" | "employees" | "billing" | "settings"
   >("new");
   const [preview, setPreview] = useState(false);
   const [historyReadOnly, setHistoryReadOnly] = useState(false);
@@ -93,6 +155,28 @@ export function BudgetApplication() {
     ...DEFAULT_APP_SETTINGS,
   });
   const [parts, setParts] = useState<Part[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [supplierDraft, setSupplierDraft] = useState<Supplier>({
+    id: "",
+    name: "",
+    document: "",
+    phone: "",
+    paymentMethod: "PIX",
+    pixKey: "",
+    paymentDate: "",
+  });
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeDraft, setEmployeeDraft] = useState<Employee>({
+    id: "",
+    name: "",
+    document: "",
+    phone: "",
+    paymentMethod: "PIX",
+    pixKey: "",
+    paymentDate: "",
+  });
   const [partDraft, setPartDraft] = useState<Part>({
     id: "",
     code: "",
@@ -100,9 +184,7 @@ export function BudgetApplication() {
     stockQuantity: 0,
     unitPrice: 0,
   });
-  const [settingsSection, setSettingsSection] = useState<
-    "company" | "password" | "email"
-  >("company");
+  const [settingsSection, setSettingsSection] = useState<"company" | "password" | "email">("company");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -118,6 +200,22 @@ export function BudgetApplication() {
     period: periodFilter,
   });
   const visibleBudgets = filtered.slice(0, historyVisibleCount);
+  const filteredSuppliers = useMemo(() => {
+    const query = supplierSearch.trim().toLocaleLowerCase("pt-BR");
+    if (!query) return suppliers;
+    return suppliers.filter((supplier) =>
+      [supplier.name, supplier.document, supplier.phone, supplier.paymentMethod, supplier.pixKey]
+        .some((value) => value.toLocaleLowerCase("pt-BR").includes(query)),
+    );
+  }, [supplierSearch, suppliers]);
+  const filteredEmployees = useMemo(() => {
+    const query = employeeSearch.trim().toLocaleLowerCase("pt-BR");
+    if (!query) return employees;
+    return employees.filter((employee) =>
+      [employee.name, employee.document, employee.phone, employee.paymentMethod, employee.pixKey]
+        .some((value) => value.toLocaleLowerCase("pt-BR").includes(query)),
+    );
+  }, [employeeSearch, employees]);
 
   useEffect(() => {
     loadDatabase()
@@ -138,6 +236,26 @@ export function BudgetApplication() {
   }, [isEmployee]);
 
   useEffect(() => {
+    if (isEmployee) return;
+    void loadEmployeesFromDatabase()
+      .then(setEmployees)
+      .catch((error: Error) => setToast({
+        text: `Erro ao carregar funcionários: ${error.message}`,
+        type: "error",
+      }));
+  }, [isEmployee]);
+
+  useEffect(() => {
+    if (isEmployee) return;
+    void loadSuppliersFromDatabase()
+      .then(setSuppliers)
+      .catch((error: Error) => setToast({
+        text: `Erro ao carregar fornecedores: ${error.message}`,
+        type: "error",
+      }));
+  }, [isEmployee]);
+
+  useEffect(() => {
     const channel = supabase
       .channel("budget-history-status")
       .on(
@@ -148,20 +266,14 @@ export function BudgetApplication() {
             const normalizedBudgets = data.budgets.map(withDefaultItemUnit);
             setSaved(normalizedBudgets);
             if (historyReadOnly) {
-              setBudget(
-                (current) =>
-                  normalizedBudgets.find((item) => item.id === current.id) ??
-                  current,
-              );
+              setBudget((current) => normalizedBudgets.find((item) => item.id === current.id) ?? current);
             }
           });
         },
       )
       .subscribe();
 
-    return () => {
-      void supabase.removeChannel(channel);
-    };
+    return () => { void supabase.removeChannel(channel); };
   }, [historyReadOnly]);
 
   useEffect(() => {
@@ -335,6 +447,88 @@ export function BudgetApplication() {
       notify("Cliente salvo no banco");
     } catch (error) {
       notify(`Erro: ${(error as Error).message}`);
+    }
+  };
+
+  const clearSupplierDraft = () => setSupplierDraft({
+    id: "",
+    name: "",
+    document: "",
+    phone: "",
+    paymentMethod: "PIX",
+    pixKey: "",
+    paymentDate: "",
+  });
+
+  const registerSupplier = async () => {
+    const validationError = validatePaymentRegistration(supplierDraft, "o fornecedor");
+    if (validationError) return notify(validationError, "error");
+    if (suppliers.some((item) =>
+      onlyDigits(item.document) === onlyDigits(supplierDraft.document) && item.id !== supplierDraft.id
+    )) return notify("Este CPF/CNPJ já está cadastrado em fornecedores", "error");
+    try {
+      const current = await saveSupplierToDatabase({
+        ...supplierDraft,
+        id: supplierDraft.id || crypto.randomUUID(),
+      });
+      setSuppliers([current, ...suppliers.filter((item) => item.id !== current.id)]);
+      clearSupplierDraft();
+      notify(supplierDraft.id ? "Fornecedor atualizado" : "Fornecedor cadastrado");
+    } catch (error) {
+      notify(`Erro ao salvar fornecedor: ${(error as Error).message}`, "error");
+    }
+  };
+
+  const removeSupplier = async (supplier: Supplier) => {
+    if (!window.confirm(`Excluir o fornecedor ${supplier.name}?`)) return;
+    try {
+      await deleteSupplierFromDatabase(supplier.id);
+      setSuppliers((current) => current.filter((item) => item.id !== supplier.id));
+      if (supplierDraft.id === supplier.id) clearSupplierDraft();
+      notify("Fornecedor excluído");
+    } catch (error) {
+      notify(`Erro ao excluir fornecedor: ${(error as Error).message}`, "error");
+    }
+  };
+
+  const clearEmployeeDraft = () => setEmployeeDraft({
+    id: "",
+    name: "",
+    document: "",
+    phone: "",
+    paymentMethod: "PIX",
+    pixKey: "",
+    paymentDate: "",
+  });
+
+  const registerEmployee = async () => {
+    const validationError = validatePaymentRegistration(employeeDraft, "o funcionário");
+    if (validationError) return notify(validationError, "error");
+    if (employees.some((item) =>
+      onlyDigits(item.document) === onlyDigits(employeeDraft.document) && item.id !== employeeDraft.id
+    )) return notify("Este CPF/CNPJ já está cadastrado em funcionários", "error");
+    try {
+      const current = await saveEmployeeToDatabase({
+        ...employeeDraft,
+        id: employeeDraft.id || crypto.randomUUID(),
+      });
+      setEmployees([current, ...employees.filter((item) => item.id !== current.id)]);
+      clearEmployeeDraft();
+      notify(employeeDraft.id ? "Funcionário atualizado" : "Funcionário cadastrado");
+    } catch (error) {
+      notify(`Erro ao salvar funcionário: ${(error as Error).message}`, "error");
+    }
+  };
+
+  const removeEmployee = async (employee: Employee) => {
+    if (!window.confirm(`Excluir o funcionário ${employee.name}?`)) return;
+    try {
+      await deleteEmployeeFromDatabase(employee.id);
+      setEmployees((current) => current.filter((item) => item.id !== employee.id));
+      if (employeeDraft.id === employee.id) clearEmployeeDraft();
+      notify("Funcionário excluído");
+    } catch (error) {
+      notify(`Erro ao excluir funcionário: ${(error as Error).message}`, "error");
     }
   };
 
@@ -563,10 +757,8 @@ export function BudgetApplication() {
 
   const saveNewPassword = async () => {
     if (!currentPassword) return notify("Informe a senha atual", "error");
-    if (!passwordIsValid)
-      return notify("A nova senha não atende aos requisitos", "error");
-    if (newPassword !== confirmPassword)
-      return notify("A confirmação da senha está diferente", "error");
+    if (!passwordIsValid) return notify("A nova senha não atende aos requisitos", "error");
+    if (newPassword !== confirmPassword) return notify("A confirmação da senha está diferente", "error");
     setSecuritySaving(true);
     try {
       await changeAccountPassword(currentPassword, newPassword);
@@ -672,6 +864,12 @@ export function BudgetApplication() {
   };
 
   const saveBudget = async () => {
+    const stockError = stockValidationError(budget);
+    if (stockError)
+      return notify(
+        `Não foi possível salvar. Estoque insuficiente: ${stockError}`,
+        "error",
+      );
     try {
       const current = await saveBudgetToDatabase(withDefaultItemUnit(budget));
       setBudget(current);
@@ -687,9 +885,7 @@ export function BudgetApplication() {
     setBudget(nextBudget);
     try {
       const number = await loadNextBudgetNumber();
-      setBudget((current) =>
-        current.id === nextBudget.id ? { ...current, number } : current,
-      );
+      setBudget((current) => current.id === nextBudget.id ? { ...current, number } : current);
     } catch {
       notify("Não foi possível confirmar a próxima numeração", "error");
     }
@@ -723,16 +919,52 @@ export function BudgetApplication() {
     }
   };
 
-  const downloadPreviewPdf = async () => {
-    const element = document.getElementById("budget-pdf");
-    if (!element) return notify("Pré-visualização não encontrada", "error");
-    notify("Gerando PDF...");
+  const generateAndStorePdf = async () => {
+    const stockError = stockValidationError(budget);
+    if (stockError)
+      return notify(
+        `Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`,
+        "error",
+      );
     try {
-      const pdf = await createBudgetPdf(element, `${budget.number}.pdf`);
+      notify("Gerando PDF...");
+      const budgetAtSave = {
+        ...withDefaultItemUnit(budget),
+        createdAt: budget.createdAt || new Date().toISOString(),
+      };
+      const persisted = await saveBudgetToDatabase(budgetAtSave);
+      setBudget(persisted);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const element = document.getElementById("budget-pdf");
+      if (!element) throw new Error("Pré-visualização do orçamento não encontrada");
+
+      const pdf = await createBudgetPdf(element, `${persisted.number}.pdf`);
       await pdf.download();
-      notify("PDF baixado");
+
+      try {
+        const pdfUrl = await savePdf(persisted.id, pdf.blob);
+        const updated = {
+          ...withDefaultItemUnit(persisted),
+          pdfUrl,
+          pdfSavedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        const next = [updated, ...saved.filter((item) => item.id !== updated.id)];
+        setBudget(updated);
+        setSaved(next);
+        await saveBudgetToDatabase(updated);
+        notify("Orçamento salvo e PDF baixado");
+      } catch (storageError) {
+        setSaved([persisted, ...saved.filter((item) => item.id !== persisted.id)]);
+        notify(
+          `PDF baixado, mas não foi possível armazená-lo online: ${(storageError as Error).message}`,
+          "error",
+        );
+      }
     } catch (error) {
-      notify(`Erro ao gerar PDF: ${(error as Error).message}`, "error");
+      notify(`Não foi possível gerar o PDF: ${(error as Error).message}`, "error");
     }
   };
 
@@ -755,8 +987,7 @@ export function BudgetApplication() {
       }
 
       const element = document.getElementById("budget-pdf");
-      if (!element)
-        return notify("Não foi possível localizar o orçamento", "error");
+      if (!element) return notify("Não foi possível localizar o orçamento", "error");
       notify("Gerando PDF...");
       const pdf = await createBudgetPdf(element, `${budget.number}.pdf`);
       await pdf.download();
@@ -825,8 +1056,7 @@ export function BudgetApplication() {
             className={tab === "saved" ? "active" : ""}
             onClick={() => setTab("saved")}
           >
-            <i>▤</i>
-            {isEmployee ? "Histórico" : "Orçamentos"}
+            <i>▤</i>{isEmployee ? "Histórico" : "Orçamentos"}
           </button>
           <button
             className={tab === "clients" ? "active" : ""}
@@ -846,22 +1076,30 @@ export function BudgetApplication() {
           >
             <i>▣</i>Estoque
           </button>
-          {!isEmployee && (
-            <button
-              className={tab === "billing" ? "active" : ""}
-              onClick={() => setTab("billing")}
-            >
-              <i>R$</i>Mensalidade
-            </button>
-          )}
-          {!isEmployee && (
-            <button
-              className={tab === "settings" ? "active" : ""}
-              onClick={() => setTab("settings")}
-            >
-              <i>⚙</i>Configurações
-            </button>
-          )}
+          {!isEmployee && <button
+            className={tab === "suppliers" ? "active" : ""}
+            onClick={() => setTab("suppliers")}
+          >
+            <i>♧</i>Fornecedores
+          </button>}
+          {!isEmployee && <button
+            className={tab === "employees" ? "active" : ""}
+            onClick={() => setTab("employees")}
+          >
+            <i>♟</i>Funcionários
+          </button>}
+          {!isEmployee && <button
+            className={tab === "billing" ? "active" : ""}
+            onClick={() => setTab("billing")}
+          >
+            <i>R$</i>Mensalidade
+          </button>}
+          {!isEmployee && <button
+            className={tab === "settings" ? "active" : ""}
+            onClick={() => setTab("settings")}
+          >
+            <i>⚙</i>Configurações
+          </button>}
         </nav>
         <div className="sidebar-card">
           <span>Atalho rápido</span>
@@ -903,6 +1141,10 @@ export function BudgetApplication() {
                       ? "Catálogo de serviços"
                       : tab === "stock"
                         ? "Estoque de peças"
+                        : tab === "suppliers"
+                          ? "Fornecedores"
+                        : tab === "employees"
+                          ? "Funcionários"
                         : tab === "billing"
                           ? "Mensalidade"
                           : "Configurações"}
@@ -926,6 +1168,10 @@ export function BudgetApplication() {
                         ? isEmployee
                           ? "Consulte códigos, valores e quantidades disponíveis em estoque."
                           : "Cadastre peças para venda e adicione-as aos orçamentos."
+                        : tab === "suppliers"
+                          ? "Cadastre e acompanhe os dados de pagamento dos fornecedores."
+                        : tab === "employees"
+                          ? "Cadastre e consulte os dados de pagamento dos funcionários."
                         : tab === "billing"
                           ? "Acompanhe vencimentos, pagamentos e faturas da assinatura."
                           : "Personalize os dados exibidos nos orçamentos."}
@@ -972,18 +1218,13 @@ export function BudgetApplication() {
                   Horário do salvamento
                   <input
                     className="creation-time-input"
-                    value={
-                      budget.createdAt
-                        ? new Date(budget.createdAt).toLocaleTimeString(
-                            "pt-BR",
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            },
-                          )
-                        : "Será registrado ao salvar"
-                    }
+                    value={budget.createdAt
+                      ? new Date(budget.createdAt).toLocaleTimeString("pt-BR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })
+                      : "Será registrado ao salvar"}
                     readOnly
                     aria-readonly="true"
                     title="Horário registrado automaticamente no primeiro salvamento"
@@ -1010,12 +1251,7 @@ export function BudgetApplication() {
                   <input
                     placeholder="Ex.: João da Silva"
                     value={budget.technicianName}
-                    onChange={(event) =>
-                      setBudget({
-                        ...budget,
-                        technicianName: event.target.value,
-                      })
-                    }
+                    onChange={(event) => setBudget({ ...budget, technicianName: event.target.value })}
                   />
                 </label>
               </div>
@@ -1273,35 +1509,33 @@ export function BudgetApplication() {
                   Status
                   <input value={budget.status} readOnly />
                 </label>
-                {!isEmployee && (
-                  <div className="status-actions full">
-                    <span>Próxima etapa</span>
-                    {getAllowedNextStatuses(budget.status)
-                      .filter((status) => status !== "Recusado")
-                      .map((status) => (
-                        <button
-                          key={status}
-                          className="button primary"
-                          onClick={() => advanceStatus(status)}
-                        >
-                          Avançar para {status}
-                        </button>
-                      ))}
-                    {getAllowedNextStatuses(budget.status).includes(
-                      "Recusado",
-                    ) && (
+                {!isEmployee && <div className="status-actions full">
+                  <span>Próxima etapa</span>
+                  {getAllowedNextStatuses(budget.status)
+                    .filter((status) => status !== "Recusado")
+                    .map((status) => (
                       <button
-                        className="button danger"
-                        onClick={() => advanceStatus("Recusado")}
+                        key={status}
+                        className="button primary"
+                        onClick={() => advanceStatus(status)}
                       >
-                        Marcar como recusado
+                        Avançar para {status}
                       </button>
-                    )}
-                    {getAllowedNextStatuses(budget.status).length === 0 && (
-                      <strong>Status final: {budget.status}</strong>
-                    )}
-                  </div>
-                )}
+                    ))}
+                  {getAllowedNextStatuses(budget.status).includes(
+                    "Recusado",
+                  ) && (
+                    <button
+                      className="button danger"
+                      onClick={() => advanceStatus("Recusado")}
+                    >
+                      Marcar como recusado
+                    </button>
+                  )}
+                  {getAllowedNextStatuses(budget.status).length === 0 && (
+                    <strong>Status final: {budget.status}</strong>
+                  )}
+                </div>}
                 <label className="full">
                   Observações
                   <textarea
@@ -1354,8 +1588,7 @@ export function BudgetApplication() {
                     )}
                   </small>
                   <small>
-                    Salvo às{" "}
-                    {budget.createdAt
+                    Salvo às {budget.createdAt
                       ? new Date(budget.createdAt).toLocaleTimeString("pt-BR", {
                           hour: "2-digit",
                           minute: "2-digit",
@@ -1482,22 +1715,18 @@ export function BudgetApplication() {
               <button className="button primary" onClick={downloadReadOnlyPdf}>
                 ↧ Baixar PDF
               </button>
-            ) : (
-              <button
-                className="button ghost"
-                onClick={() => setPreview(!preview)}
-              >
-                {preview ? "← Voltar para edição" : "◉ Visualizar"}
-              </button>
-            )}
-            {!historyReadOnly && (
-              <button className="button primary" onClick={saveBudget}>
-                ✓ Salvar orçamento
-              </button>
-            )}
+            ) : <button
+              className="button ghost"
+              onClick={() => setPreview(!preview)}
+            >
+              {preview ? "← Voltar para edição" : "◉ Visualizar"}
+            </button>}
+            {!historyReadOnly && <button className="button primary" onClick={saveBudget}>
+              ✓ Salvar orçamento
+            </button>}
             {!historyReadOnly && preview && (
-              <button className="button primary" onClick={downloadPreviewPdf}>
-                ↧ Baixar PDF
+              <button className="button primary" onClick={generateAndStorePdf}>
+                ↧ Salvar e baixar PDF
               </button>
             )}
           </div>
@@ -1614,14 +1843,12 @@ export function BudgetApplication() {
                     <button onClick={() => openBudget(item)}>
                       {isEmployee ? "Visualizar" : "Abrir"}
                     </button>
-                    {!isEmployee && (
-                      <button
-                        className="delete-action"
-                        onClick={() => removeBudget(item)}
-                      >
-                        Excluir
-                      </button>
-                    )}
+                    {!isEmployee && <button
+                      className="delete-action"
+                      onClick={() => removeBudget(item)}
+                    >
+                      Excluir
+                    </button>}
                   </div>
                 </div>
               ))}
@@ -1662,128 +1889,118 @@ export function BudgetApplication() {
         )}
 
         {tab === "clients" && (
-          <section
-            className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}
-          >
-            {!isEmployee && (
-              <div className="card registry-form">
-                <div className="section-title">
-                  <span>01</span>
-                  <div>
-                    <h2>Cadastro de cliente</h2>
-                    <p>Dados armazenados para reutilização</p>
-                  </div>
+          <section className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}>
+            {!isEmployee && <div className="card registry-form">
+              <div className="section-title">
+                <span>01</span>
+                <div>
+                  <h2>Cadastro de cliente</h2>
+                  <p>Dados armazenados para reutilização</p>
                 </div>
-                <div className="form-grid">
-                  <label className="wide">
-                    Nome / Razão social
-                    <input
-                      value={clientDraft.name}
-                      onChange={(e) =>
-                        setClientDraft({ ...clientDraft, name: e.target.value })
-                      }
-                    />
-                  </label>
-                  <label>
-                    CPF / CNPJ
-                    <input
-                      value={clientDraft.document}
-                      onChange={(e) =>
-                        setClientDraft({
-                          ...clientDraft,
-                          document: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Telefone
-                    <input
-                      value={clientDraft.phone}
-                      onChange={(e) =>
-                        setClientDraft({
-                          ...clientDraft,
-                          phone: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    E-mail
-                    <input
-                      value={clientDraft.email}
-                      onChange={(e) =>
-                        setClientDraft({
-                          ...clientDraft,
-                          email: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Contato
-                    <input
-                      value={clientDraft.contact}
-                      onChange={(e) =>
-                        setClientDraft({
-                          ...clientDraft,
-                          contact: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="wide">
-                    Endereço
-                    <input
-                      value={clientDraft.address}
-                      onChange={(e) =>
-                        setClientDraft({
-                          ...clientDraft,
-                          address: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Cidade
-                    <input
-                      value={clientDraft.city}
-                      onChange={(e) =>
-                        setClientDraft({ ...clientDraft, city: e.target.value })
-                      }
-                    />
-                  </label>
-                  <label>
-                    UF
-                    <input
-                      maxLength={2}
-                      value={clientDraft.state}
-                      onChange={(e) =>
-                        setClientDraft({
-                          ...clientDraft,
-                          state: e.target.value.toUpperCase(),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    CEP
-                    <input
-                      value={clientDraft.cep}
-                      onChange={(e) =>
-                        setClientDraft({ ...clientDraft, cep: e.target.value })
-                      }
-                    />
-                  </label>
-                </div>
-                <button
-                  className="button primary registry-save"
-                  onClick={registerClient}
-                >
-                  Salvar cliente
-                </button>
               </div>
-            )}
+              <div className="form-grid">
+                <label className="wide">
+                  Nome / Razão social
+                  <input
+                    value={clientDraft.name}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, name: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  CPF / CNPJ
+                  <input
+                    value={clientDraft.document}
+                    onChange={(e) =>
+                      setClientDraft({
+                        ...clientDraft,
+                        document: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Telefone
+                  <input
+                    value={clientDraft.phone}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, phone: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  E-mail
+                  <input
+                    value={clientDraft.email}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, email: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Contato
+                  <input
+                    value={clientDraft.contact}
+                    onChange={(e) =>
+                      setClientDraft({
+                        ...clientDraft,
+                        contact: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="wide">
+                  Endereço
+                  <input
+                    value={clientDraft.address}
+                    onChange={(e) =>
+                      setClientDraft({
+                        ...clientDraft,
+                        address: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Cidade
+                  <input
+                    value={clientDraft.city}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, city: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  UF
+                  <input
+                    maxLength={2}
+                    value={clientDraft.state}
+                    onChange={(e) =>
+                      setClientDraft({
+                        ...clientDraft,
+                        state: e.target.value.toUpperCase(),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  CEP
+                  <input
+                    value={clientDraft.cep}
+                    onChange={(e) =>
+                      setClientDraft({ ...clientDraft, cep: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              <button
+                className="button primary registry-save"
+                onClick={registerClient}
+              >
+                Salvar cliente
+              </button>
+            </div>}
             <div className="card registry-list">
               <h2>Clientes cadastrados</h2>
               {clients.map((client) => (
@@ -1795,11 +2012,7 @@ export function BudgetApplication() {
                       {client.phone || "Sem telefone"}
                     </small>
                   </div>
-                  {!isEmployee && (
-                    <button onClick={() => setClientDraft(client)}>
-                      Editar
-                    </button>
-                  )}
+                  {!isEmployee && <button onClick={() => setClientDraft(client)}>Editar</button>}
                 </div>
               ))}
               {!clients.length && (
@@ -1810,134 +2023,118 @@ export function BudgetApplication() {
         )}
 
         {tab === "services" && (
-          <section
-            className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}
-          >
-            {!isEmployee && (
-              <div
-                id="service-form"
-                tabIndex={-1}
-                className={`card registry-form service-form-card ${serviceDraft.id ? "is-editing" : ""}`}
-              >
-                <div className="section-title">
-                  <span>02</span>
-                  <div>
-                    <h2>
-                      {serviceDraft.id
-                        ? "Editar serviço"
-                        : "Cadastro de serviço"}
-                    </h2>
-                    <p>
-                      {serviceDraft.id
-                        ? `Altere os dados de ${serviceDraft.code} e clique em Atualizar serviço`
-                        : "Esta tabela será ligada aos IDs do backend"}
-                    </p>
-                  </div>
-                </div>
-                {serviceDraft.id && (
-                  <div className="editing-service-notice">
-                    <strong>✎ Modo de edição ativo</strong>
-                    <span>
-                      Você está editando o serviço {serviceDraft.code}.
-                    </span>
-                  </div>
-                )}
-                <div className="form-grid">
-                  <label>
-                    Código
-                    <input
-                      placeholder="Ex.: SRV-001"
-                      value={serviceDraft.code}
-                      onChange={(e) =>
-                        setServiceDraft({
-                          ...serviceDraft,
-                          code: e.target.value.toUpperCase(),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="wide">
-                    Serviço
-                    <input
-                      value={serviceDraft.description}
-                      onChange={(e) =>
-                        setServiceDraft({
-                          ...serviceDraft,
-                          description: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Unidade
-                    <input
-                      value="un."
-                      readOnly
-                      aria-label="Unidade do serviço"
-                    />
-                  </label>
-                  <label>
-                    Valor
-                    <input
-                      type="number"
-                      min="0"
-                      step=".01"
-                      value={serviceDraft.unitPrice || ""}
-                      onChange={(e) =>
-                        setServiceDraft({
-                          ...serviceDraft,
-                          unitPrice: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="service-form-actions">
-                  <button
-                    className="button primary registry-save"
-                    onClick={registerService}
-                  >
-                    {serviceDraft.id ? "✓ Atualizar serviço" : "Salvar serviço"}
-                  </button>
-                  {serviceDraft.id && (
-                    <button
-                      className="button ghost registry-save"
-                      onClick={clearServiceDraft}
-                    >
-                      Cancelar edição
-                    </button>
-                  )}
+          <section className={`registry-layout ${isEmployee ? "read-only-registry" : ""}`}>
+            {!isEmployee && <div
+              id="service-form"
+              tabIndex={-1}
+              className={`card registry-form service-form-card ${serviceDraft.id ? "is-editing" : ""}`}
+            >
+              <div className="section-title">
+                <span>02</span>
+                <div>
+                  <h2>
+                    {serviceDraft.id ? "Editar serviço" : "Cadastro de serviço"}
+                  </h2>
+                  <p>
+                    {serviceDraft.id
+                      ? `Altere os dados de ${serviceDraft.code} e clique em Atualizar serviço`
+                      : "Esta tabela será ligada aos IDs do backend"}
+                  </p>
                 </div>
               </div>
-            )}
+              {serviceDraft.id && (
+                <div className="editing-service-notice">
+                  <strong>✎ Modo de edição ativo</strong>
+                  <span>Você está editando o serviço {serviceDraft.code}.</span>
+                </div>
+              )}
+              <div className="form-grid">
+                <label>
+                  Código
+                  <input
+                    placeholder="Ex.: SRV-001"
+                    value={serviceDraft.code}
+                    onChange={(e) =>
+                      setServiceDraft({
+                        ...serviceDraft,
+                        code: e.target.value.toUpperCase(),
+                      })
+                    }
+                  />
+                </label>
+                <label className="wide">
+                  Serviço
+                  <input
+                    value={serviceDraft.description}
+                    onChange={(e) =>
+                      setServiceDraft({
+                        ...serviceDraft,
+                        description: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Unidade
+                  <input value="un." readOnly aria-label="Unidade do serviço" />
+                </label>
+                <label>
+                  Valor
+                  <input
+                    type="number"
+                    min="0"
+                    step=".01"
+                    value={serviceDraft.unitPrice || ""}
+                    onChange={(e) =>
+                      setServiceDraft({
+                        ...serviceDraft,
+                        unitPrice: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <div className="service-form-actions">
+                <button
+                  className="button primary registry-save"
+                  onClick={registerService}
+                >
+                  {serviceDraft.id ? "✓ Atualizar serviço" : "Salvar serviço"}
+                </button>
+                {serviceDraft.id && (
+                  <button
+                    className="button ghost registry-save"
+                    onClick={clearServiceDraft}
+                  >
+                    Cancelar edição
+                  </button>
+                )}
+              </div>
+            </div>}
             <div className="card registry-list">
               <div className="registry-title">
                 <h2>Planilha de serviços</h2>
-                {!isEmployee && (
-                  <div className="registry-actions">
-                    <button
-                      className="button ghost"
-                      disabled={!services.length}
-                      onClick={downloadServicesPdf}
-                    >
-                      ↧ Gerar PDF
-                    </button>
-                    <button
-                      className="button soft"
-                      onClick={() => {
-                        clearServiceDraft();
-                        document
-                          .getElementById("service-form")
-                          ?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                      }}
-                    >
-                      ＋ Adicionar serviço
-                    </button>
-                  </div>
-                )}
+                {!isEmployee && <div className="registry-actions">
+                  <button
+                    className="button ghost"
+                    disabled={!services.length}
+                    onClick={downloadServicesPdf}
+                  >
+                    ↧ Gerar PDF
+                  </button>
+                  <button
+                    className="button soft"
+                    onClick={() => {
+                      clearServiceDraft();
+                      document.getElementById("service-form")?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                    }}
+                  >
+                    ＋ Adicionar serviço
+                  </button>
+                </div>}
               </div>
               <div id="service-pdf" className="services-paper">
                 <div className="services-paper-head">
@@ -1958,9 +2155,7 @@ export function BudgetApplication() {
                   <span>Serviço</span>
                   <span>Unidade</span>
                   <span>Valor</span>
-                  {!isEmployee && (
-                    <span className="service-actions-label">Ações</span>
-                  )}
+                  {!isEmployee && <span className="service-actions-label">Ações</span>}
                 </div>
                 {services.map((service) => (
                   <div
@@ -1973,27 +2168,25 @@ export function BudgetApplication() {
                     </div>
                     <span>{service.unit}</span>
                     <b>{money(service.unitPrice)}</b>
-                    {!isEmployee && (
-                      <div className="service-actions">
-                        <button
-                          className="add-to-budget"
-                          onClick={() => addServiceToBudget(service)}
-                        >
-                          ＋ Orçamento
-                        </button>
-                        <button onClick={() => editService(service)}>
-                          {serviceDraft.id === service.id
-                            ? "Editando..."
-                            : "Editar"}
-                        </button>
-                        <button
-                          className="delete-service"
-                          onClick={() => removeService(service)}
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    )}
+                    {!isEmployee && <div className="service-actions">
+                      <button
+                        className="add-to-budget"
+                        onClick={() => addServiceToBudget(service)}
+                      >
+                        ＋ Orçamento
+                      </button>
+                      <button onClick={() => editService(service)}>
+                        {serviceDraft.id === service.id
+                          ? "Editando..."
+                          : "Editar"}
+                      </button>
+                      <button
+                        className="delete-service"
+                        onClick={() => removeService(service)}
+                      >
+                        Excluir
+                      </button>
+                    </div>}
                   </div>
                 ))}
                 <footer>{services.length} serviço(s) cadastrado(s)</footer>
@@ -2008,106 +2201,100 @@ export function BudgetApplication() {
         )}
 
         {tab === "stock" && (
-          <section
-            className={`registry-layout stock-layout ${isEmployee ? "read-only-registry" : ""}`}
-          >
-            {!isEmployee && (
-              <div
-                className={`card registry-form ${partDraft.id ? "is-editing" : ""}`}
-              >
-                <div className="section-title">
-                  <span>▣</span>
-                  <div>
-                    <h2>
-                      {partDraft.id
-                        ? "Editar peça"
-                        : "Adicionar peça ao estoque"}
-                    </h2>
-                    <p>Cadastre peças disponíveis para venda nos orçamentos</p>
-                  </div>
-                </div>
-                {partDraft.id && (
-                  <div className="editing-service-notice">
-                    <strong>✎ Modo de edição ativo</strong>
-                    <span>Atualize os dados de {partDraft.code}.</span>
-                  </div>
-                )}
-                <div className="form-grid">
-                  <label>
-                    Código
-                    <input
-                      placeholder="Ex.: PEC-001"
-                      value={partDraft.code}
-                      onChange={(event) =>
-                        setPartDraft({
-                          ...partDraft,
-                          code: event.target.value.toUpperCase(),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="wide">
-                    Peça
-                    <input
-                      placeholder="Nome ou descrição da peça"
-                      value={partDraft.description}
-                      onChange={(event) =>
-                        setPartDraft({
-                          ...partDraft,
-                          description: event.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Quantidade em estoque
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={partDraft.stockQuantity || ""}
-                      onChange={(event) =>
-                        setPartDraft({
-                          ...partDraft,
-                          stockQuantity: Number(event.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Valor de venda
-                    <input
-                      type="number"
-                      min="0"
-                      step=".01"
-                      value={partDraft.unitPrice || ""}
-                      onChange={(event) =>
-                        setPartDraft({
-                          ...partDraft,
-                          unitPrice: Number(event.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="service-form-actions">
-                  <button
-                    className="button primary registry-save"
-                    onClick={registerPart}
-                  >
-                    {partDraft.id ? "✓ Atualizar peça" : "＋ Salvar peça"}
-                  </button>
-                  {partDraft.id && (
-                    <button
-                      className="button ghost registry-save"
-                      onClick={clearPartDraft}
-                    >
-                      Cancelar edição
-                    </button>
-                  )}
+          <section className={`registry-layout stock-layout ${isEmployee ? "read-only-registry" : ""}`}>
+            {!isEmployee && <div
+              className={`card registry-form ${partDraft.id ? "is-editing" : ""}`}
+            >
+              <div className="section-title">
+                <span>▣</span>
+                <div>
+                  <h2>
+                    {partDraft.id ? "Editar peça" : "Adicionar peça ao estoque"}
+                  </h2>
+                  <p>Cadastre peças disponíveis para venda nos orçamentos</p>
                 </div>
               </div>
-            )}
+              {partDraft.id && (
+                <div className="editing-service-notice">
+                  <strong>✎ Modo de edição ativo</strong>
+                  <span>Atualize os dados de {partDraft.code}.</span>
+                </div>
+              )}
+              <div className="form-grid">
+                <label>
+                  Código
+                  <input
+                    placeholder="Ex.: PEC-001"
+                    value={partDraft.code}
+                    onChange={(event) =>
+                      setPartDraft({
+                        ...partDraft,
+                        code: event.target.value.toUpperCase(),
+                      })
+                    }
+                  />
+                </label>
+                <label className="wide">
+                  Peça
+                  <input
+                    placeholder="Nome ou descrição da peça"
+                    value={partDraft.description}
+                    onChange={(event) =>
+                      setPartDraft({
+                        ...partDraft,
+                        description: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Quantidade em estoque
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={partDraft.stockQuantity || ""}
+                    onChange={(event) =>
+                      setPartDraft({
+                        ...partDraft,
+                        stockQuantity: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Valor de venda
+                  <input
+                    type="number"
+                    min="0"
+                    step=".01"
+                    value={partDraft.unitPrice || ""}
+                    onChange={(event) =>
+                      setPartDraft({
+                        ...partDraft,
+                        unitPrice: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <div className="service-form-actions">
+                <button
+                  className="button primary registry-save"
+                  onClick={registerPart}
+                >
+                  {partDraft.id ? "✓ Atualizar peça" : "＋ Salvar peça"}
+                </button>
+                {partDraft.id && (
+                  <button
+                    className="button ghost registry-save"
+                    onClick={clearPartDraft}
+                  >
+                    Cancelar edição
+                  </button>
+                )}
+              </div>
+            </div>}
             <div className="card registry-list">
               <div className="registry-title">
                 <div>
@@ -2116,11 +2303,9 @@ export function BudgetApplication() {
                     A baixa ocorre somente quando o orçamento é aprovado.
                   </p>
                 </div>
-                {!isEmployee && (
-                  <button className="button soft" onClick={clearPartDraft}>
-                    ＋ Nova peça
-                  </button>
-                )}
+                {!isEmployee && <button className="button soft" onClick={clearPartDraft}>
+                  ＋ Nova peça
+                </button>}
               </div>
               <div className="stock-summary">
                 <div>
@@ -2163,26 +2348,22 @@ export function BudgetApplication() {
                     >
                       {part.stockQuantity > 0 ? "Disponível" : "Indisponível"}
                     </em>
-                    {!isEmployee && (
-                      <div className="stock-actions">
-                        <button
-                          className="add-to-budget"
-                          disabled={part.stockQuantity <= 0}
-                          onClick={() => addPartToBudget(part)}
-                        >
-                          ＋ Orçamento
-                        </button>
-                        <button onClick={() => setPartDraft(part)}>
-                          Editar
-                        </button>
-                        <button
-                          className="delete-service"
-                          onClick={() => removePart(part)}
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    )}
+                    {!isEmployee && <div className="stock-actions">
+                      <button
+                        className="add-to-budget"
+                        disabled={part.stockQuantity <= 0}
+                        onClick={() => addPartToBudget(part)}
+                      >
+                        ＋ Orçamento
+                      </button>
+                      <button onClick={() => setPartDraft(part)}>Editar</button>
+                      <button
+                        className="delete-service"
+                        onClick={() => removePart(part)}
+                      >
+                        Excluir
+                      </button>
+                    </div>}
                   </div>
                 ))}
                 {!parts.length && (
@@ -2196,275 +2377,499 @@ export function BudgetApplication() {
           </section>
         )}
 
+        {tab === "suppliers" && !isEmployee && (
+          <section className="registry-layout supplier-layout">
+            <div className={`card registry-form ${supplierDraft.id ? "is-editing" : ""}`}>
+              <div className="section-title">
+                <span>01</span>
+                <div>
+                  <h2>{supplierDraft.id ? "Editar fornecedor" : "Cadastro de fornecedor"}</h2>
+                  <p>Dados financeiros para consulta administrativa</p>
+                </div>
+              </div>
+              {supplierDraft.id && (
+                <div className="editing-service-notice">
+                  <strong>✎ Modo de edição ativo</strong>
+                  <span>Você está editando {supplierDraft.name}.</span>
+                </div>
+              )}
+              <div className="form-grid">
+                <label className="wide">
+                  Nome / Razão social
+                  <input
+                    placeholder="Ex.: Fornecedor de peças"
+                    value={supplierDraft.name}
+                    onChange={(event) => setSupplierDraft({ ...supplierDraft, name: event.target.value })}
+                  />
+                </label>
+                <label>
+                  CPF / CNPJ
+                  <input
+                    placeholder="000.000.000-00"
+                    value={supplierDraft.document}
+                    onChange={(event) => setSupplierDraft({ ...supplierDraft, document: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Telefone
+                  <input
+                    type="tel"
+                    placeholder="(85) 99999-9999"
+                    value={supplierDraft.phone}
+                    onChange={(event) => setSupplierDraft({ ...supplierDraft, phone: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Forma de pagamento
+                  <SmoothSelect
+                    ariaLabel="Forma de pagamento do fornecedor"
+                    value={supplierDraft.paymentMethod}
+                    options={[
+                      { value: "PIX", label: "PIX" },
+                      { value: "Boleto", label: "Boleto" },
+                      { value: "Transferência", label: "Transferência" },
+                      { value: "Depósito", label: "Depósito" },
+                      { value: "Dinheiro", label: "Dinheiro" },
+                    ]}
+                    onChange={(value) => setSupplierDraft({ ...supplierDraft, paymentMethod: value })}
+                  />
+                </label>
+                <label className="wide">
+                  Chave Pix
+                  <input
+                    placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+                    value={supplierDraft.pixKey}
+                    onChange={(event) => setSupplierDraft({ ...supplierDraft, pixKey: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Data de pagamento
+                  <input
+                    type="date"
+                    value={supplierDraft.paymentDate}
+                    onChange={(event) => setSupplierDraft({ ...supplierDraft, paymentDate: event.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="service-form-actions">
+                <button className="button primary registry-save" onClick={registerSupplier}>
+                  {supplierDraft.id ? "✓ Atualizar fornecedor" : "＋ Salvar fornecedor"}
+                </button>
+                {supplierDraft.id && (
+                  <button className="button ghost registry-save" onClick={clearSupplierDraft}>
+                    Cancelar edição
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="card registry-list">
+              <div className="registry-title supplier-title">
+                <div>
+                  <h2>Fornecedores cadastrados</h2>
+                  <p className="stock-subtitle">Informações visíveis somente para o administrador.</p>
+                </div>
+                <button className="button soft" onClick={clearSupplierDraft}>＋ Novo fornecedor</button>
+              </div>
+              <label className="supplier-search">
+                Pesquisar fornecedor
+                <input
+                  type="search"
+                  placeholder="Pesquise por nome, CPF/CNPJ, telefone, pagamento ou Pix"
+                  value={supplierSearch}
+                  onChange={(event) => setSupplierSearch(event.target.value)}
+                />
+              </label>
+              <div className="supplier-table">
+                <div className="supplier-row supplier-head">
+                  <span>Fornecedor</span>
+                  <span>CPF/CNPJ</span>
+                  <span>Telefone</span>
+                  <span>Pagamento</span>
+                  <span>Chave Pix</span>
+                  <span>Data</span>
+                  <span>Ações</span>
+                </div>
+                {filteredSuppliers.map((supplier) => (
+                  <div className="supplier-row" key={supplier.id}>
+                    <strong>{supplier.name}</strong>
+                    <span>{supplier.document || "—"}</span>
+                    <span>{supplier.phone || "—"}</span>
+                    <span>{supplier.paymentMethod || "—"}</span>
+                    <span className="supplier-pix" title={supplier.pixKey}>{supplier.pixKey || "—"}</span>
+                    <span>{supplier.paymentDate
+                      ? new Date(`${supplier.paymentDate}T12:00:00`).toLocaleDateString("pt-BR")
+                      : "—"}</span>
+                    <div className="supplier-actions">
+                      <button onClick={() => {
+                        setSupplierDraft(supplier);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}>Editar</button>
+                      <button className="delete-service" onClick={() => void removeSupplier(supplier)}>Excluir</button>
+                    </div>
+                  </div>
+                ))}
+                {!filteredSuppliers.length && (
+                  <div className="empty-history">
+                    <strong>Nenhum fornecedor encontrado</strong>
+                    <span>{supplierSearch ? "Altere os termos da pesquisa." : "Cadastre o primeiro fornecedor."}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {tab === "employees" && !isEmployee && (
+          <section className="registry-layout supplier-layout">
+            <div className={`card registry-form ${employeeDraft.id ? "is-editing" : ""}`}>
+              <div className="section-title">
+                <span>01</span>
+                <div>
+                  <h2>{employeeDraft.id ? "Editar funcionário" : "Cadastro de funcionário"}</h2>
+                  <p>Cadastro administrativo sem criação de login</p>
+                </div>
+              </div>
+              {employeeDraft.id && (
+                <div className="editing-service-notice">
+                  <strong>✎ Modo de edição ativo</strong>
+                  <span>Você está editando {employeeDraft.name}.</span>
+                </div>
+              )}
+              <div className="form-grid">
+                <label className="wide">
+                  Nome
+                  <input
+                    placeholder="Ex.: João da Silva"
+                    value={employeeDraft.name}
+                    onChange={(event) => setEmployeeDraft({ ...employeeDraft, name: event.target.value })}
+                  />
+                </label>
+                <label>
+                  CPF / CNPJ
+                  <input
+                    placeholder="000.000.000-00"
+                    value={employeeDraft.document}
+                    onChange={(event) => setEmployeeDraft({ ...employeeDraft, document: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Telefone
+                  <input
+                    type="tel"
+                    placeholder="(85) 99999-9999"
+                    value={employeeDraft.phone}
+                    onChange={(event) => setEmployeeDraft({ ...employeeDraft, phone: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Forma de pagamento
+                  <SmoothSelect
+                    ariaLabel="Forma de pagamento do funcionário"
+                    value={employeeDraft.paymentMethod}
+                    options={[
+                      { value: "PIX", label: "PIX" },
+                      { value: "Transferência", label: "Transferência" },
+                      { value: "Depósito", label: "Depósito" },
+                      { value: "Dinheiro", label: "Dinheiro" },
+                    ]}
+                    onChange={(value) => setEmployeeDraft({ ...employeeDraft, paymentMethod: value })}
+                  />
+                </label>
+                <label className="wide">
+                  Chave Pix
+                  <input
+                    placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+                    value={employeeDraft.pixKey}
+                    onChange={(event) => setEmployeeDraft({ ...employeeDraft, pixKey: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Data de pagamento
+                  <input
+                    type="date"
+                    value={employeeDraft.paymentDate}
+                    onChange={(event) => setEmployeeDraft({ ...employeeDraft, paymentDate: event.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="service-form-actions">
+                <button className="button primary registry-save" onClick={registerEmployee}>
+                  {employeeDraft.id ? "✓ Atualizar funcionário" : "＋ Salvar funcionário"}
+                </button>
+                {employeeDraft.id && (
+                  <button className="button ghost registry-save" onClick={clearEmployeeDraft}>
+                    Cancelar edição
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="card registry-list">
+              <div className="registry-title supplier-title">
+                <div>
+                  <h2>Funcionários cadastrados</h2>
+                  <p className="stock-subtitle">Informações visíveis somente para o administrador.</p>
+                </div>
+                <button className="button soft" onClick={clearEmployeeDraft}>＋ Novo funcionário</button>
+              </div>
+              <label className="supplier-search">
+                Pesquisar funcionário
+                <input
+                  type="search"
+                  placeholder="Pesquise por nome, CPF/CNPJ, telefone, pagamento ou Pix"
+                  value={employeeSearch}
+                  onChange={(event) => setEmployeeSearch(event.target.value)}
+                />
+              </label>
+              <div className="supplier-table">
+                <div className="supplier-row supplier-head">
+                  <span>Funcionário</span>
+                  <span>CPF/CNPJ</span>
+                  <span>Telefone</span>
+                  <span>Pagamento</span>
+                  <span>Chave Pix</span>
+                  <span>Data</span>
+                  <span>Ações</span>
+                </div>
+                {filteredEmployees.map((employee) => (
+                  <div className="supplier-row" key={employee.id}>
+                    <strong>{employee.name}</strong>
+                    <span>{employee.document || "—"}</span>
+                    <span>{employee.phone || "—"}</span>
+                    <span>{employee.paymentMethod || "—"}</span>
+                    <span className="supplier-pix" title={employee.pixKey}>{employee.pixKey || "—"}</span>
+                    <span>{employee.paymentDate
+                      ? new Date(`${employee.paymentDate}T12:00:00`).toLocaleDateString("pt-BR")
+                      : "—"}</span>
+                    <div className="supplier-actions">
+                      <button onClick={() => {
+                        setEmployeeDraft(employee);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}>Editar</button>
+                      <button className="delete-service" onClick={() => void removeEmployee(employee)}>Excluir</button>
+                    </div>
+                  </div>
+                ))}
+                {!filteredEmployees.length && (
+                  <div className="empty-history">
+                    <strong>Nenhum funcionário encontrado</strong>
+                    <span>{employeeSearch ? "Altere os termos da pesquisa." : "Cadastre o primeiro funcionário."}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         {tab === "billing" && <BillingOverview />}
 
         {tab === "settings" && (
           <section className="settings-layout">
             <div className="settings-menu card">
-              <button
-                className={settingsSection === "company" ? "active" : ""}
-                onClick={() => setSettingsSection("company")}
-              >
-                Empresa
-              </button>
-              <button
-                className={settingsSection === "password" ? "active" : ""}
-                onClick={() => setSettingsSection("password")}
-              >
-                Alterar senha
-              </button>
-              <button
-                className={settingsSection === "email" ? "active" : ""}
-                onClick={() => setSettingsSection("email")}
-              >
-                Alterar e-mail
-              </button>
+              <button className={settingsSection === "company" ? "active" : ""} onClick={() => setSettingsSection("company")}>Empresa</button>
+              <button className={settingsSection === "password" ? "active" : ""} onClick={() => setSettingsSection("password")}>Alterar senha</button>
+              <button className={settingsSection === "email" ? "active" : ""} onClick={() => setSettingsSection("email")}>Alterar e-mail</button>
             </div>
-            {settingsSection === "company" && (
-              <div className="card settings-form">
-                <div className="section-title">
-                  <span>ID</span>
-                  <div>
-                    <h2>Dados da empresa</h2>
-                    <p>Estas informações aparecem no orçamento</p>
-                  </div>
+            {settingsSection === "company" && <div className="card settings-form">
+              <div className="section-title">
+                <span>ID</span>
+                <div>
+                  <h2>Dados da empresa</h2>
+                  <p>Estas informações aparecem no orçamento</p>
                 </div>
-                <div className="logo-upload">
-                  <img
-                    src={brandLogo}
-                    alt={`Logo de ${appSettings.companyName}`}
+              </div>
+              <div className="logo-upload">
+                <img
+                  src={brandLogo}
+                  alt={`Logo de ${appSettings.companyName}`}
+                />
+                <div>
+                  <strong>Logotipo da empresa</strong>
+                  <p>
+                    {appSettings.logoDataUrl
+                      ? "Logo personalizada aplicada ao sistema e aos PDFs."
+                      : "Esta é a logo padrão. Troque pela logo da sua marca."}
+                  </p>
+                  <input
+                    ref={logoInputRef}
+                    className="logo-file-input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={(event) => chooseLogo(event.target.files?.[0])}
                   />
-                  <div>
-                    <strong>Logotipo da empresa</strong>
-                    <p>
-                      {appSettings.logoDataUrl
-                        ? "Logo personalizada aplicada ao sistema e aos PDFs."
-                        : "Esta é a logo padrão. Troque pela logo da sua marca."}
-                    </p>
-                    <input
-                      ref={logoInputRef}
-                      className="logo-file-input"
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                      onChange={(event) => chooseLogo(event.target.files?.[0])}
-                    />
-                    <button
-                      className="button ghost"
-                      onClick={() => logoInputRef.current?.click()}
-                    >
-                      {appSettings.logoDataUrl
-                        ? "Alterar logotipo"
-                        : "Escolher minha logo"}
-                    </button>
-                    {appSettings.logoDataUrl && (
-                      <button
-                        className="button danger remove-logo-button"
-                        onClick={() => updateAppSetting("logoDataUrl", "")}
-                      >
-                        Usar logo padrão
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="form-grid">
-                  <label>
-                    Nome da empresa
-                    <input
-                      value={appSettings.companyName}
-                      onChange={(event) =>
-                        updateAppSetting("companyName", event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    Nome do sistema
-                    <input
-                      value={appSettings.appName}
-                      onChange={(event) =>
-                        updateAppSetting("appName", event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    Segmento
-                    <input
-                      value={appSettings.segment}
-                      onChange={(event) =>
-                        updateAppSetting("segment", event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    CNPJ
-                    <input
-                      value={appSettings.document}
-                      onChange={(event) =>
-                        updateAppSetting("document", event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    Telefone
-                    <input
-                      value={appSettings.phone}
-                      onChange={(event) =>
-                        updateAppSetting("phone", event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    E-mail
-                    <input
-                      value={appSettings.email}
-                      onChange={(event) =>
-                        updateAppSetting("email", event.target.value)
-                      }
-                    />
-                  </label>
-                  <label className="full">
-                    Endereço
-                    <input
-                      value={appSettings.address}
-                      onChange={(event) =>
-                        updateAppSetting("address", event.target.value)
-                      }
-                    />
-                  </label>
-                </div>
-                <button className="button primary" onClick={saveAppSettings}>
-                  Salvar alterações
-                </button>
-              </div>
-            )}
-
-            {settingsSection === "password" && (
-              <div className="card settings-form security-settings-form">
-                <div className="section-title">
-                  <span>🔒</span>
-                  <div>
-                    <h2>Alterar senha</h2>
-                    <p>
-                      Atualize a senha usada para acessar o painel
-                      administrativo
-                    </p>
-                  </div>
-                </div>
-                <div className="security-fields">
-                  <label>
-                    Senha atual
-                    <PasswordInput
-                      autoComplete="current-password"
-                      value={currentPassword}
-                      onChange={(event) =>
-                        setCurrentPassword(event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    Nova senha
-                    <PasswordInput
-                      autoComplete="new-password"
-                      value={newPassword}
-                      onChange={(event) => setNewPassword(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Confirmar nova senha
-                    <PasswordInput
-                      autoComplete="new-password"
-                      value={confirmPassword}
-                      onChange={(event) =>
-                        setConfirmPassword(event.target.value)
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="password-validation" aria-live="polite">
-                  <strong>A nova senha precisa ter:</strong>
-                  <span className={passwordChecks.length ? "valid" : ""}>
-                    ✓ Pelo menos 8 caracteres
-                  </span>
-                  <span className={passwordChecks.uppercase ? "valid" : ""}>
-                    ✓ Uma letra maiúscula
-                  </span>
-                  <span className={passwordChecks.lowercase ? "valid" : ""}>
-                    ✓ Uma letra minúscula
-                  </span>
-                  <span className={passwordChecks.number ? "valid" : ""}>
-                    ✓ Um número
-                  </span>
-                  <span className={passwordChecks.special ? "valid" : ""}>
-                    ✓ Um caractere especial
-                  </span>
-                  <span
-                    className={
-                      confirmPassword && confirmPassword === newPassword
-                        ? "valid"
-                        : ""
-                    }
+                  <button
+                    className="button ghost"
+                    onClick={() => logoInputRef.current?.click()}
                   >
-                    ✓ Confirmação igual à nova senha
-                  </span>
+                    {appSettings.logoDataUrl
+                      ? "Alterar logotipo"
+                      : "Escolher minha logo"}
+                  </button>
+                  {appSettings.logoDataUrl && (
+                    <button
+                      className="button danger remove-logo-button"
+                      onClick={() => updateAppSetting("logoDataUrl", "")}
+                    >
+                      Usar logo padrão
+                    </button>
+                  )}
                 </div>
-                <button
-                  className="button primary"
-                  disabled={securitySaving}
-                  onClick={saveNewPassword}
-                >
-                  {securitySaving ? "Alterando..." : "Alterar senha"}
-                </button>
               </div>
-            )}
+              <div className="form-grid">
+                <label>
+                  Nome da empresa
+                  <input
+                    value={appSettings.companyName}
+                    onChange={(event) =>
+                      updateAppSetting("companyName", event.target.value)
+                    }
+                  />
+                </label>
+                <label>
+                  Nome do sistema
+                  <input
+                    value={appSettings.appName}
+                    onChange={(event) =>
+                      updateAppSetting("appName", event.target.value)
+                    }
+                  />
+                </label>
+                <label>
+                  Segmento
+                  <input
+                    value={appSettings.segment}
+                    onChange={(event) =>
+                      updateAppSetting("segment", event.target.value)
+                    }
+                  />
+                </label>
+                <label>
+                  CNPJ
+                  <input
+                    value={appSettings.document}
+                    onChange={(event) =>
+                      updateAppSetting("document", event.target.value)
+                    }
+                  />
+                </label>
+                <label>
+                  Telefone
+                  <input
+                    value={appSettings.phone}
+                    onChange={(event) =>
+                      updateAppSetting("phone", event.target.value)
+                    }
+                  />
+                </label>
+                <label>
+                  E-mail
+                  <input
+                    value={appSettings.email}
+                    onChange={(event) =>
+                      updateAppSetting("email", event.target.value)
+                    }
+                  />
+                </label>
+                <label className="full">
+                  Endereço
+                  <input
+                    value={appSettings.address}
+                    onChange={(event) =>
+                      updateAppSetting("address", event.target.value)
+                    }
+                  />
+                </label>
+              </div>
+              <button className="button primary" onClick={saveAppSettings}>
+                Salvar alterações
+              </button>
+            </div>}
 
-            {settingsSection === "email" && (
-              <div className="card settings-form security-settings-form">
-                <div className="section-title">
-                  <span>✉</span>
-                  <div>
-                    <h2>Alterar e-mail</h2>
-                    <p>
-                      O novo endereço será usado no próximo acesso ao sistema
-                    </p>
-                  </div>
+            {settingsSection === "password" && <div className="card settings-form security-settings-form">
+              <div className="section-title">
+                <span>🔒</span>
+                <div>
+                  <h2>Alterar senha</h2>
+                  <p>Atualize a senha usada para acessar o painel administrativo</p>
                 </div>
-                <div className="security-fields email-security-fields">
-                  <label>
-                    Novo e-mail
-                    <input
-                      type="email"
-                      autoComplete="email"
-                      placeholder="novo@email.com"
-                      value={newAccountEmail}
-                      onChange={(event) =>
-                        setNewAccountEmail(event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    Senha atual para confirmar
-                    <PasswordInput
-                      autoComplete="current-password"
-                      value={emailPassword}
-                      onChange={(event) => setEmailPassword(event.target.value)}
-                    />
-                  </label>
-                </div>
-                <div className="security-notice">
-                  <strong>Confirmação de segurança</strong>
-                  <span>
-                    O Supabase enviará uma confirmação para o novo endereço. A
-                    troca será concluída depois da confirmação.
-                  </span>
-                </div>
-                <button
-                  className="button primary"
-                  disabled={securitySaving}
-                  onClick={saveNewEmail}
-                >
-                  {securitySaving ? "Enviando..." : "Alterar e-mail"}
-                </button>
               </div>
-            )}
+              <div className="security-fields">
+                <label>
+                  Senha atual
+                  <PasswordInput
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Nova senha
+                  <PasswordInput
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Confirmar nova senha
+                  <PasswordInput
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="password-validation" aria-live="polite">
+                <strong>A nova senha precisa ter:</strong>
+                <span className={passwordChecks.length ? "valid" : ""}>✓ Pelo menos 8 caracteres</span>
+                <span className={passwordChecks.uppercase ? "valid" : ""}>✓ Uma letra maiúscula</span>
+                <span className={passwordChecks.lowercase ? "valid" : ""}>✓ Uma letra minúscula</span>
+                <span className={passwordChecks.number ? "valid" : ""}>✓ Um número</span>
+                <span className={passwordChecks.special ? "valid" : ""}>✓ Um caractere especial</span>
+                <span className={confirmPassword && confirmPassword === newPassword ? "valid" : ""}>✓ Confirmação igual à nova senha</span>
+              </div>
+              <button className="button primary" disabled={securitySaving} onClick={saveNewPassword}>
+                {securitySaving ? "Alterando..." : "Alterar senha"}
+              </button>
+            </div>}
+
+            {settingsSection === "email" && <div className="card settings-form security-settings-form">
+              <div className="section-title">
+                <span>✉</span>
+                <div>
+                  <h2>Alterar e-mail</h2>
+                  <p>O novo endereço será usado no próximo acesso ao sistema</p>
+                </div>
+              </div>
+              <div className="security-fields email-security-fields">
+                <label>
+                  Novo e-mail
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="novo@email.com"
+                    value={newAccountEmail}
+                    onChange={(event) => setNewAccountEmail(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Senha atual para confirmar
+                  <PasswordInput
+                    autoComplete="current-password"
+                    value={emailPassword}
+                    onChange={(event) => setEmailPassword(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="security-notice">
+                <strong>Confirmação de segurança</strong>
+                <span>O Supabase enviará uma confirmação para o novo endereço. A troca será concluída depois da confirmação.</span>
+              </div>
+              <button className="button primary" disabled={securitySaving} onClick={saveNewEmail}>
+                {securitySaving ? "Enviando..." : "Alterar e-mail"}
+              </button>
+            </div>}
           </section>
         )}
       </main>

@@ -1955,3 +1955,21 @@ textarea:focus {
   color: #173b8f !important;
   font-weight: 800 !important;
 }
+
+.supplier-layout { align-items: start; }
+.supplier-title { align-items: flex-start; }
+.supplier-search { display: grid; gap: 7px; margin: 18px 0; color: var(--muted); font-size: 11px; font-weight: 800; }
+.supplier-table { overflow-x: auto; border: 1px solid var(--line); border-radius: 11px; }
+.supplier-row { min-width: 1040px; display: grid; grid-template-columns: 1.25fr 1fr .95fr .8fr 1.25fr .7fr 1fr; gap: 12px; align-items: center; padding: 14px 15px; border-top: 1px solid var(--line); font-size: 11px; }
+.supplier-row:first-child { border-top: 0; }
+.supplier-head { background: #f3f6fb; color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.supplier-pix { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.supplier-actions { display: flex; gap: 7px; justify-content: flex-end; }
+.supplier-actions button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--blue); font-size: 10px; font-weight: 800; cursor: pointer; }
+.supplier-actions .delete-service { color: #b42318; border-color: #f2c7c3; }
+
+@media (max-width: 760px) {
+  .supplier-title { gap: 12px; }
+  .supplier-title .button { width: 100%; }
+  .supplier-row { min-width: 980px; }
+}
