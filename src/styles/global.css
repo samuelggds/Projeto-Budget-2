@@ -319,7 +319,7 @@ nav button.active {
 .workspace {
   width: calc(100% - 248px);
   margin-left: 248px;
-  padding: 24px 30px 50px;
+  padding: 18px 26px 44px;
 }
 .topbar {
   display: flex;
@@ -327,7 +327,7 @@ nav button.active {
   align-items: center;
   gap: 30px;
   max-width: 1320px;
-  margin: 0 auto 18px;
+  margin: 0 auto 14px;
 }
 .eyebrow {
   color: var(--blue) !important;
@@ -336,14 +336,14 @@ nav button.active {
   letter-spacing: 0.13em;
 }
 .topbar h1 {
-  font-size: 24px;
-  margin: 4px 0 5px;
+  font-size: 21px;
+  margin: 3px 0 4px;
   letter-spacing: -0.03em;
 }
 .topbar p {
   color: var(--muted);
   margin: 0;
-  font-size: 12px;
+  font-size: 11px;
 }
 .top-actions {
   display: flex;
@@ -354,9 +354,9 @@ nav button.active {
   background: #fff;
   color: var(--ink);
   border-radius: 9px;
-  padding: 8px 13px;
+  padding: 7px 11px;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
 }
 .button.primary {
   background: var(--blue);
@@ -382,45 +382,45 @@ nav button.active {
 }
 .editor {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 .card {
   background: #fff;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 18px;
+  border-radius: 12px;
+  padding: 14px 16px;
   box-shadow: 0 3px 14px #23345b09;
 }
 .section-title {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 .section-title > span {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 7px;
   background: #eef3ff;
   color: var(--blue);
   font-weight: 800;
-  font-size: 11px;
+  font-size: 10px;
 }
 .section-title h2 {
-  font-size: 14px;
+  font-size: 13px;
   margin: 0 0 2px;
 }
 .section-title p {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   margin: 0;
 }
 .form-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 10px;
 }
 .form-grid.three {
   grid-template-columns: repeat(3, 1fr);
@@ -446,8 +446,8 @@ select,
 textarea {
   width: 100%;
   border: 1px solid #dfe4ed;
-  border-radius: 8px;
-  padding: 8px 10px;
+  border-radius: 7px;
+  padding: 6px 9px;
   color: var(--ink);
   background: #fff;
   outline: none;
