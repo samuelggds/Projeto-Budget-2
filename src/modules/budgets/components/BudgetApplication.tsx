@@ -18,6 +18,8 @@ import { getAllowedNextStatuses } from "../services/budgetStatus";
 import {
   changeAccountEmail,
   changeAccountPassword,
+  listFuncionarios,
+  updateFuncionarioAuth,
   supabase,
 } from "../../auth/services/supabase";
 import {
@@ -251,7 +253,7 @@ export function BudgetApplication() {
   });
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([]);
   const [settingsSection, setSettingsSection] = useState<
-    "company" | "password" | "email" | "discount"
+    "company" | "password" | "email" | "discount" | "employees-auth"
   >("company");
   const [discountDraft, setDiscountDraft] = useState<DiscountPreset>({
     id: "",
@@ -267,6 +269,18 @@ export function BudgetApplication() {
   const [newAccountEmail, setNewAccountEmail] = useState("");
   const [securitySaving, setSecuritySaving] = useState(false);
   const [emailChangeResult, setEmailChangeResult] = useState<{
+    ok: boolean;
+    msg: string;
+  } | null>(null);
+  const [funcionarios, setFuncionarios] = useState<
+    { userId: string; email: string }[]
+  >([]);
+  const [selectedFuncionario, setSelectedFuncionario] = useState("");
+  const [empNewEmail, setEmpNewEmail] = useState("");
+  const [empNewPassword, setEmpNewPassword] = useState("");
+  const [empConfirmPassword, setEmpConfirmPassword] = useState("");
+  const [empSaving, setEmpSaving] = useState(false);
+  const [empResult, setEmpResult] = useState<{
     ok: boolean;
     msg: string;
   } | null>(null);
@@ -1055,6 +1069,62 @@ export function BudgetApplication() {
     special: /[^A-Za-z0-9]/.test(newPassword),
   };
   const passwordIsValid = Object.values(passwordChecks).every(Boolean);
+
+  const empPasswordChecks = {
+    length: empNewPassword.length >= 8,
+    uppercase: /[A-Z]/.test(empNewPassword),
+    lowercase: /[a-z]/.test(empNewPassword),
+    number: /\d/.test(empNewPassword),
+    special: /[^A-Za-z0-9]/.test(empNewPassword),
+  };
+  const empPasswordIsValid = Object.values(empPasswordChecks).every(Boolean);
+
+  const loadFuncionarios = async () => {
+    setEmpResult(null);
+    try {
+      const data = await listFuncionarios();
+      setFuncionarios(data.users ?? []);
+    } catch (error) {
+      setEmpResult({ ok: false, msg: (error as Error).message });
+    }
+  };
+
+  const saveEmpAuth = async () => {
+    if (!selectedFuncionario)
+      return notify("Selecione um funcionário", "error");
+    const normalizedEmail = empNewEmail.trim().toLowerCase();
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))
+      return notify("Digite um e-mail válido", "error");
+    if (empNewPassword) {
+      if (!empPasswordIsValid)
+        return notify("A nova senha não atende aos requisitos", "error");
+      if (empNewPassword !== empConfirmPassword)
+        return notify("A confirmação da senha está diferente", "error");
+    }
+    if (!normalizedEmail && !empNewPassword)
+      return notify("Informe um novo e-mail ou senha", "error");
+    setEmpSaving(true);
+    setEmpResult(null);
+    try {
+      await updateFuncionarioAuth(
+        selectedFuncionario,
+        normalizedEmail || undefined,
+        empNewPassword || undefined,
+      );
+      setEmpNewEmail("");
+      setEmpNewPassword("");
+      setEmpConfirmPassword("");
+      setEmpResult({
+        ok: true,
+        msg: "Dados do funcionário atualizados com sucesso",
+      });
+      void loadFuncionarios();
+    } catch (error) {
+      setEmpResult({ ok: false, msg: (error as Error).message });
+    } finally {
+      setEmpSaving(false);
+    }
+  };
 
   const saveNewPassword = async () => {
     if (!currentPassword) return notify("Informe a senha atual", "error");
@@ -3635,6 +3705,15 @@ export function BudgetApplication() {
               >
                 Desconto
               </button>
+              <button
+                className={settingsSection === "employees-auth" ? "active" : ""}
+                onClick={() => {
+                  setSettingsSection("employees-auth");
+                  void loadFuncionarios();
+                }}
+              >
+                Contas de funcionários
+              </button>
             </div>
             {settingsSection === "company" && (
               <div className="card settings-form">
@@ -4137,6 +4216,139 @@ export function BudgetApplication() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {settingsSection === "employees-auth" && (
+              <div className="card settings-form security-settings-form">
+                <div className="section-title">
+                  <span>♟</span>
+                  <div>
+                    <h2>Contas de funcionários</h2>
+                    <p>
+                      Altere o e-mail ou a senha de uma conta de funcionário
+                    </p>
+                  </div>
+                </div>
+                <div className="security-fields">
+                  <label>
+                    Funcionário
+                    <select
+                      value={selectedFuncionario}
+                      onChange={(e) => {
+                        setSelectedFuncionario(e.target.value);
+                        setEmpNewEmail("");
+                        setEmpNewPassword("");
+                        setEmpConfirmPassword("");
+                        setEmpResult(null);
+                      }}
+                    >
+                      <option value="">Selecione um funcionário</option>
+                      {funcionarios.map((f) => (
+                        <option key={f.userId} value={f.userId}>
+                          {f.email}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {funcionarios.length === 0 && (
+                    <p className="registry-empty">
+                      Nenhuma conta com papel Funcionário encontrada.
+                    </p>
+                  )}
+                </div>
+                {selectedFuncionario && (
+                  <>
+                    <div className="security-fields email-security-fields">
+                      <label>
+                        Novo e-mail (opcional)
+                        <input
+                          type="email"
+                          autoComplete="off"
+                          placeholder="novo@email.com"
+                          value={empNewEmail}
+                          onChange={(e) => setEmpNewEmail(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="security-fields">
+                      <label>
+                        Nova senha (opcional)
+                        <PasswordInput
+                          autoComplete="new-password"
+                          value={empNewPassword}
+                          onChange={(e) => setEmpNewPassword(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Confirmar nova senha
+                        <PasswordInput
+                          autoComplete="new-password"
+                          value={empConfirmPassword}
+                          onChange={(e) =>
+                            setEmpConfirmPassword(e.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                    {empNewPassword && (
+                      <div className="password-validation" aria-live="polite">
+                        <strong>A nova senha precisa ter:</strong>
+                        <span
+                          className={empPasswordChecks.length ? "valid" : ""}
+                        >
+                          ✓ Pelo menos 8 caracteres
+                        </span>
+                        <span
+                          className={empPasswordChecks.uppercase ? "valid" : ""}
+                        >
+                          ✓ Uma letra maiúscula
+                        </span>
+                        <span
+                          className={empPasswordChecks.lowercase ? "valid" : ""}
+                        >
+                          ✓ Uma letra minúscula
+                        </span>
+                        <span
+                          className={empPasswordChecks.number ? "valid" : ""}
+                        >
+                          ✓ Um número
+                        </span>
+                        <span
+                          className={empPasswordChecks.special ? "valid" : ""}
+                        >
+                          ✓ Um caractere especial
+                        </span>
+                        <span
+                          className={
+                            empConfirmPassword &&
+                            empConfirmPassword === empNewPassword
+                              ? "valid"
+                              : ""
+                          }
+                        >
+                          ✓ Confirmação igual à nova senha
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      className="button primary"
+                      disabled={empSaving}
+                      onClick={() => void saveEmpAuth()}
+                    >
+                      {empSaving ? "Salvando..." : "Salvar alterações"}
+                    </button>
+                  </>
+                )}
+                {empResult && (
+                  <div
+                    className={empResult.ok ? "security-notice" : "login-error"}
+                    style={{ marginTop: 12 }}
+                  >
+                    <strong>{empResult.ok ? "✓ Sucesso" : "! Erro"}</strong>
+                    <span>{empResult.msg}</span>
+                  </div>
+                )}
               </div>
             )}
           </section>

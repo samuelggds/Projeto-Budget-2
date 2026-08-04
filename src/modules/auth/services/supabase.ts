@@ -56,3 +56,37 @@ export async function changeAccountEmail(
   );
   if (error) throw new Error(error.message);
 }
+
+export async function listFuncionarios(): Promise<{
+  users: { userId: string; email: string }[];
+}> {
+  const { data, error } = await supabase.functions.invoke(
+    "admin-manage-users",
+    {
+      body: { action: "list" },
+    },
+  );
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+  return data as { users: { userId: string; email: string }[] };
+}
+
+export async function updateFuncionarioAuth(
+  userId: string,
+  newEmail?: string,
+  newPassword?: string,
+): Promise<void> {
+  const { data, error } = await supabase.functions.invoke(
+    "admin-manage-users",
+    {
+      body: {
+        action: "update",
+        userId,
+        newEmail: newEmail ?? "",
+        newPassword: newPassword ?? "",
+      },
+    },
+  );
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+}

@@ -9,3 +9,6 @@ verify_jwt = false
 
 [functions.subscription-maintenance]
 verify_jwt = false
+
+[functions.admin-manage-users]
+verify_jwt = false
