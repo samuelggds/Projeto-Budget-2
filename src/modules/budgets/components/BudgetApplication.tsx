@@ -18,7 +18,7 @@ import { getAllowedNextStatuses } from "../services/budgetStatus";
 import {
   changeAccountEmail,
   changeAccountPassword,
-  listFuncionarios,
+  getFuncionarioEmail,
   updateFuncionarioAuth,
   supabase,
 } from "../../auth/services/supabase";
@@ -272,10 +272,7 @@ export function BudgetApplication() {
     ok: boolean;
     msg: string;
   } | null>(null);
-  const [funcionarios, setFuncionarios] = useState<
-    { userId: string; email: string }[]
-  >([]);
-  const [selectedFuncionario, setSelectedFuncionario] = useState("");
+  const [funcionarioEmail, setFuncionarioEmail] = useState("");
   const [empNewEmail, setEmpNewEmail] = useState("");
   const [empNewPassword, setEmpNewPassword] = useState("");
   const [empConfirmPassword, setEmpConfirmPassword] = useState("");
@@ -1082,16 +1079,14 @@ export function BudgetApplication() {
   const loadFuncionarios = async () => {
     setEmpResult(null);
     try {
-      const data = await listFuncionarios();
-      setFuncionarios(data.users ?? []);
+      const email = await getFuncionarioEmail();
+      setFuncionarioEmail(email);
     } catch (error) {
       setEmpResult({ ok: false, msg: (error as Error).message });
     }
   };
 
   const saveEmpAuth = async () => {
-    if (!selectedFuncionario)
-      return notify("Selecione um funcionário", "error");
     const normalizedEmail = empNewEmail.trim().toLowerCase();
     if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))
       return notify("Digite um e-mail válido", "error");
@@ -1107,10 +1102,10 @@ export function BudgetApplication() {
     setEmpResult(null);
     try {
       await updateFuncionarioAuth(
-        selectedFuncionario,
         normalizedEmail || undefined,
         empNewPassword || undefined,
       );
+      if (normalizedEmail) setFuncionarioEmail(normalizedEmail);
       setEmpNewEmail("");
       setEmpNewPassword("");
       setEmpConfirmPassword("");
@@ -1118,7 +1113,6 @@ export function BudgetApplication() {
         ok: true,
         msg: "Dados do funcionário atualizados com sucesso",
       });
-      void loadFuncionarios();
     } catch (error) {
       setEmpResult({ ok: false, msg: (error as Error).message });
     } finally {
@@ -4226,120 +4220,88 @@ export function BudgetApplication() {
                   <div>
                     <h2>Contas de funcionários</h2>
                     <p>
-                      Altere o e-mail ou a senha de uma conta de funcionário
+                      Altere o e-mail ou a senha da conta compartilhada dos
+                      funcionários
                     </p>
                   </div>
                 </div>
+                {funcionarioEmail && (
+                  <div className="security-notice">
+                    <strong>E-mail atual</strong>
+                    <span>{funcionarioEmail}</span>
+                  </div>
+                )}
+                <div className="security-fields email-security-fields">
+                  <label>
+                    Novo e-mail (opcional)
+                    <input
+                      type="email"
+                      autoComplete="off"
+                      placeholder="novo@email.com"
+                      value={empNewEmail}
+                      onChange={(e) => setEmpNewEmail(e.target.value)}
+                    />
+                  </label>
+                </div>
                 <div className="security-fields">
                   <label>
-                    Funcionário
-                    <select
-                      value={selectedFuncionario}
-                      onChange={(e) => {
-                        setSelectedFuncionario(e.target.value);
-                        setEmpNewEmail("");
-                        setEmpNewPassword("");
-                        setEmpConfirmPassword("");
-                        setEmpResult(null);
-                      }}
-                    >
-                      <option value="">Selecione um funcionário</option>
-                      {funcionarios.map((f) => (
-                        <option key={f.userId} value={f.userId}>
-                          {f.email}
-                        </option>
-                      ))}
-                    </select>
+                    Nova senha (opcional)
+                    <PasswordInput
+                      autoComplete="new-password"
+                      value={empNewPassword}
+                      onChange={(e) => setEmpNewPassword(e.target.value)}
+                    />
                   </label>
-                  {funcionarios.length === 0 && (
-                    <p className="registry-empty">
-                      Nenhuma conta com papel Funcionário encontrada.
-                    </p>
-                  )}
+                  <label>
+                    Confirmar nova senha
+                    <PasswordInput
+                      autoComplete="new-password"
+                      value={empConfirmPassword}
+                      onChange={(e) => setEmpConfirmPassword(e.target.value)}
+                    />
+                  </label>
                 </div>
-                {selectedFuncionario && (
-                  <>
-                    <div className="security-fields email-security-fields">
-                      <label>
-                        Novo e-mail (opcional)
-                        <input
-                          type="email"
-                          autoComplete="off"
-                          placeholder="novo@email.com"
-                          value={empNewEmail}
-                          onChange={(e) => setEmpNewEmail(e.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <div className="security-fields">
-                      <label>
-                        Nova senha (opcional)
-                        <PasswordInput
-                          autoComplete="new-password"
-                          value={empNewPassword}
-                          onChange={(e) => setEmpNewPassword(e.target.value)}
-                        />
-                      </label>
-                      <label>
-                        Confirmar nova senha
-                        <PasswordInput
-                          autoComplete="new-password"
-                          value={empConfirmPassword}
-                          onChange={(e) =>
-                            setEmpConfirmPassword(e.target.value)
-                          }
-                        />
-                      </label>
-                    </div>
-                    {empNewPassword && (
-                      <div className="password-validation" aria-live="polite">
-                        <strong>A nova senha precisa ter:</strong>
-                        <span
-                          className={empPasswordChecks.length ? "valid" : ""}
-                        >
-                          ✓ Pelo menos 8 caracteres
-                        </span>
-                        <span
-                          className={empPasswordChecks.uppercase ? "valid" : ""}
-                        >
-                          ✓ Uma letra maiúscula
-                        </span>
-                        <span
-                          className={empPasswordChecks.lowercase ? "valid" : ""}
-                        >
-                          ✓ Uma letra minúscula
-                        </span>
-                        <span
-                          className={empPasswordChecks.number ? "valid" : ""}
-                        >
-                          ✓ Um número
-                        </span>
-                        <span
-                          className={empPasswordChecks.special ? "valid" : ""}
-                        >
-                          ✓ Um caractere especial
-                        </span>
-                        <span
-                          className={
-                            empConfirmPassword &&
-                            empConfirmPassword === empNewPassword
-                              ? "valid"
-                              : ""
-                          }
-                        >
-                          ✓ Confirmação igual à nova senha
-                        </span>
-                      </div>
-                    )}
-                    <button
-                      className="button primary"
-                      disabled={empSaving}
-                      onClick={() => void saveEmpAuth()}
+                {empNewPassword && (
+                  <div className="password-validation" aria-live="polite">
+                    <strong>A nova senha precisa ter:</strong>
+                    <span className={empPasswordChecks.length ? "valid" : ""}>
+                      ✓ Pelo menos 8 caracteres
+                    </span>
+                    <span
+                      className={empPasswordChecks.uppercase ? "valid" : ""}
                     >
-                      {empSaving ? "Salvando..." : "Salvar alterações"}
-                    </button>
-                  </>
+                      ✓ Uma letra maiúscula
+                    </span>
+                    <span
+                      className={empPasswordChecks.lowercase ? "valid" : ""}
+                    >
+                      ✓ Uma letra minúscula
+                    </span>
+                    <span className={empPasswordChecks.number ? "valid" : ""}>
+                      ✓ Um número
+                    </span>
+                    <span className={empPasswordChecks.special ? "valid" : ""}>
+                      ✓ Um caractere especial
+                    </span>
+                    <span
+                      className={
+                        empConfirmPassword &&
+                        empConfirmPassword === empNewPassword
+                          ? "valid"
+                          : ""
+                      }
+                    >
+                      ✓ Confirmação igual à nova senha
+                    </span>
+                  </div>
                 )}
+                <button
+                  className="button primary"
+                  disabled={empSaving}
+                  onClick={() => void saveEmpAuth()}
+                >
+                  {empSaving ? "Salvando..." : "Salvar alterações"}
+                </button>
                 {empResult && (
                   <div
                     className={empResult.ok ? "security-notice" : "login-error"}

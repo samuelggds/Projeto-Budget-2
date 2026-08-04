@@ -42,38 +42,30 @@ Deno.serve(async (request) => {
     }
 
     const adminClient = createAdminClient();
+
+    // Find the single FUNCIONARIO account
+    const { data: roles, error: rolesError } = await adminClient
+      .from("app_user_roles")
+      .select("user_id")
+      .eq("role", "FUNCIONARIO")
+      .limit(1)
+      .maybeSingle();
+    if (rolesError) throw rolesError;
+    if (!roles) throw new Error("Nenhuma conta de funcionário encontrada");
+    const funcionarioId = (roles as { user_id: string }).user_id;
+
     const body = (await request.json()) as Record<string, string>;
 
-    if (body.action === "list") {
-      const { data: roles, error: rolesError } = await adminClient
-        .from("app_user_roles")
-        .select("user_id")
-        .eq("role", "FUNCIONARIO");
-      if (rolesError) throw rolesError;
-
-      const users = await Promise.all(
-        (roles ?? []).map(async ({ user_id }: { user_id: string }) => {
-          const { data } = await adminClient.auth.admin.getUserById(user_id);
-          return { userId: user_id, email: data.user?.email ?? "" };
-        }),
-      );
-      return new Response(JSON.stringify({ users }), {
+    if (body.action === "get") {
+      const { data } = await adminClient.auth.admin.getUserById(funcionarioId);
+      return new Response(JSON.stringify({ email: data.user?.email ?? "" }), {
         status: 200,
         headers: jsonHeaders,
       });
     }
 
     if (body.action === "update") {
-      const { userId, newEmail, newPassword } = body;
-      if (!userId) throw new Error("userId é obrigatório");
-
-      const { data: targetRole } = await adminClient
-        .from("app_user_roles")
-        .select("role")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (targetRole?.role !== "FUNCIONARIO")
-        throw new Error("Usuário não é um funcionário");
+      const { newEmail, newPassword } = body;
 
       const updates: { email?: string; password?: string } = {};
       if (newEmail) updates.email = newEmail.trim().toLowerCase();
@@ -82,7 +74,7 @@ Deno.serve(async (request) => {
         throw new Error("Nada para atualizar");
 
       const { error: updateError } =
-        await adminClient.auth.admin.updateUserById(userId, updates);
+        await adminClient.auth.admin.updateUserById(funcionarioId, updates);
       if (updateError) throw updateError;
 
       return new Response(
