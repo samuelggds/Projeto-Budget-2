@@ -5,6 +5,7 @@ export const BUDGET_STATUSES: BudgetStatus[] = [
   "Recusado",
   "Em andamento",
   "Aprovado",
+  "Cancelado",
   "Pago",
 ];
 
@@ -20,4 +21,4 @@ export function canChangeBudgetStatus(from: BudgetStatus, to: BudgetStatus) {
 }
 
 export const isFinalBudgetStatus = (status: BudgetStatus) =>
-  status === "Recusado" || status === "Pago";
+  status === "Recusado" || status === "Pago" || status === "Cancelado";

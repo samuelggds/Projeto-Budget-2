@@ -7,6 +7,7 @@ import {
 } from "../services/budgetFactory";
 import {
   calculateBudgetTotal,
+  calculateFinalTotal,
   formatMoney as money,
 } from "../services/budgetCalculations";
 import { filterBudgets } from "../../history/services/filterBudgets";
@@ -21,6 +22,8 @@ import {
 } from "../../auth/services/supabase";
 import {
   approveBudgetAndDeductStock,
+  cancelApprovedBudget,
+  restoreCancelledBudget,
   deleteBudgetFromDatabase,
   deleteEmployeeFromDatabase,
   deletePartFromDatabase,
@@ -48,6 +51,7 @@ import {
 } from "../../settings/types/AppSettings";
 import type { Part } from "../../stock/types/Part";
 import { BillingOverview } from "../../billing/components/BillingOverview";
+import { FinancialPanel } from "./FinancialPanel";
 import { useAppRole } from "../../auth/context/appAccessContext";
 import { PasswordInput } from "../../shared/components/PasswordInput";
 import type { Supplier } from "../../suppliers/types/Supplier";
@@ -57,6 +61,7 @@ import type {
   PayeeType,
 } from "../../payments/types/PaymentHistory";
 import { daysUntilPayment } from "../../payments/services/paymentAlerts";
+import type { DiscountPreset } from "../types/DiscountPreset";
 
 const withDefaultItemUnit = (current: Budget): Budget => ({
   ...current,
@@ -167,6 +172,7 @@ export function BudgetApplication() {
     | "suppliers"
     | "employees"
     | "billing"
+    | "financeiro"
     | "settings"
   >("new");
   const [preview, setPreview] = useState(false);
@@ -176,7 +182,7 @@ export function BudgetApplication() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [periodFilter, setPeriodFilter] = useState("Todos");
-  const [historyVisibleCount, setHistoryVisibleCount] = useState(10);
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(5);
   const [toast, setToast] = useState<{
     text: string;
     type: "success" | "error";
@@ -243,8 +249,15 @@ export function BudgetApplication() {
   });
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([]);
   const [settingsSection, setSettingsSection] = useState<
-    "company" | "password" | "email"
+    "company" | "password" | "email" | "discount"
   >("company");
+  const [discountDraft, setDiscountDraft] = useState<DiscountPreset>({
+    id: "",
+    name: "",
+    type: "percentage",
+    value: 0,
+  });
+  const [showDiscountPicker, setShowDiscountPicker] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -254,6 +267,7 @@ export function BudgetApplication() {
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const total = useMemo(() => calculateBudgetTotal(budget), [budget]);
+  const finalTotal = useMemo(() => calculateFinalTotal(budget), [budget]);
   const filtered = filterBudgets(saved, {
     search,
     status: statusFilter,
@@ -717,6 +731,68 @@ export function BudgetApplication() {
     }
   };
 
+  const clearDiscountDraft = () =>
+    setDiscountDraft({ id: "", name: "", type: "percentage", value: 0 });
+
+  const saveDiscounts = async (discounts: DiscountPreset[]) => {
+    try {
+      const updated = await saveAppSettingsToDatabase({
+        ...appSettings,
+        discounts,
+      });
+      setAppSettings(updated);
+    } catch (error) {
+      notify(`Erro ao salvar desconto: ${(error as Error).message}`, "error");
+    }
+  };
+
+  const registerDiscount = async () => {
+    if (!discountDraft.name.trim())
+      return notify("Informe o nome do desconto", "error");
+    if (!Number.isFinite(discountDraft.value) || discountDraft.value <= 0)
+      return notify("Informe um valor maior que zero", "error");
+    const updated = discountDraft.id
+      ? appSettings.discounts.map((d) =>
+          d.id === discountDraft.id ? { ...discountDraft } : d,
+        )
+      : [
+          ...appSettings.discounts,
+          { ...discountDraft, id: crypto.randomUUID() },
+        ];
+    await saveDiscounts(updated);
+    clearDiscountDraft();
+    notify(discountDraft.id ? "Desconto atualizado" : "Desconto salvo");
+  };
+
+  const removeDiscountPreset = async (id: string) => {
+    if (!window.confirm("Excluir este desconto?")) return;
+    await saveDiscounts(appSettings.discounts.filter((d) => d.id !== id));
+    notify("Desconto excluído");
+  };
+
+  const applyDiscount = (preset: DiscountPreset) => {
+    const amount =
+      preset.type === "percentage"
+        ? Math.min(total, (total * preset.value) / 100)
+        : Math.min(total, preset.value);
+    const label =
+      preset.type === "percentage" ? `${preset.value}%` : money(preset.value);
+    setBudget((current) => ({
+      ...current,
+      discountLabel: label,
+      discountAmount: amount,
+    }));
+    setShowDiscountPicker(false);
+  };
+
+  const removeDiscount = () => {
+    setBudget((current) => ({
+      ...current,
+      discountLabel: undefined,
+      discountAmount: undefined,
+    }));
+  };
+
   const registerService = async () => {
     if (!serviceDraft.code.trim() || !serviceDraft.description.trim())
       return notify("Informe o código e o serviço");
@@ -1108,6 +1184,40 @@ export function BudgetApplication() {
     }
   };
 
+  const handleCancelBudget = async (id: string) => {
+    if (
+      !window.confirm(
+        "Cancelar este orçamento? O estoque das peças será restaurado.",
+      )
+    )
+      return;
+    try {
+      await cancelApprovedBudget(id);
+      const { budgets } = await loadDatabase();
+      setSaved(budgets.map(withDefaultItemUnit));
+      notify("Orçamento cancelado e estoque restaurado");
+    } catch (error) {
+      notify(`Erro ao cancelar: ${(error as Error).message}`, "error");
+    }
+  };
+
+  const handleRestoreBudget = async (id: string) => {
+    if (
+      !window.confirm(
+        "Restaurar este orçamento para Aprovado? O estoque será deduzido novamente.",
+      )
+    )
+      return;
+    try {
+      await restoreCancelledBudget(id);
+      const { budgets } = await loadDatabase();
+      setSaved(budgets.map(withDefaultItemUnit));
+      notify("Orçamento restaurado com sucesso");
+    } catch (error) {
+      notify(`Erro ao restaurar: ${(error as Error).message}`, "error");
+    }
+  };
+
   const generateAndStorePdf = async () => {
     const stockError = stockValidationError(budget);
     if (stockError)
@@ -1201,7 +1311,7 @@ export function BudgetApplication() {
     setSearch("");
     setStatusFilter("Todos");
     setPeriodFilter("Todos");
-    setHistoryVisibleCount(10);
+    setHistoryVisibleCount(5);
   };
 
   if (databaseLoading)
@@ -1303,6 +1413,14 @@ export function BudgetApplication() {
           )}
           {!isEmployee && (
             <button
+              className={tab === "financeiro" ? "active" : ""}
+              onClick={() => setTab("financeiro")}
+            >
+              <i>📊</i>Financeiro
+            </button>
+          )}
+          {!isEmployee && (
+            <button
               className={tab === "settings" ? "active" : ""}
               onClick={() => setTab("settings")}
             >
@@ -1356,7 +1474,9 @@ export function BudgetApplication() {
                             ? "Funcionários"
                             : tab === "billing"
                               ? "Mensalidade"
-                              : "Configurações"}
+                              : tab === "financeiro"
+                                ? "Financeiro"
+                                : "Configurações"}
             </h1>
             <p>
               {tab === "new"
@@ -1383,7 +1503,9 @@ export function BudgetApplication() {
                             ? "Cadastre e consulte os dados de pagamento dos funcionários."
                             : tab === "billing"
                               ? "Acompanhe vencimentos, pagamentos e faturas da assinatura."
-                              : "Personalize os dados exibidos nos orçamentos."}
+                              : tab === "financeiro"
+                                ? "Acompanhe o faturamento mensal e o total acumulado dos orçamentos."
+                                : "Personalize os dados exibidos nos orçamentos."}
             </p>
           </div>
           {tab === "saved" && (
@@ -1681,9 +1803,70 @@ export function BudgetApplication() {
                     ))}
                 </datalist>
               </div>
-              <div className="total-box">
-                <span>Total do orçamento</span>
-                <strong>{money(total)}</strong>
+              <div className="total-area">
+                <div className="discount-section">
+                  {budget.discountAmount ? (
+                    <div className="discount-applied">
+                      <div className="discount-applied-row">
+                        <span>Subtotal</span>
+                        <span>{money(total)}</span>
+                      </div>
+                      <div className="discount-applied-row">
+                        <span>{budget.discountLabel}</span>
+                        <div className="discount-applied-value">
+                          <span>− {money(budget.discountAmount)}</span>
+                          <button
+                            className="remove-discount-btn"
+                            onClick={removeDiscount}
+                            title="Remover desconto"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="discount-trigger">
+                      <button
+                        className="button ghost"
+                        onClick={() => setShowDiscountPicker((v) => !v)}
+                      >
+                        ％ Desconto
+                      </button>
+                      {showDiscountPicker && (
+                        <div className="discount-picker">
+                          {appSettings.discounts.length === 0 ? (
+                            <p className="discount-empty">
+                              Nenhum desconto cadastrado. Configure em
+                              Configurações → Desconto.
+                            </p>
+                          ) : (
+                            appSettings.discounts.map((preset) => (
+                              <button
+                                key={preset.id}
+                                className="discount-option"
+                                onClick={() => applyDiscount(preset)}
+                              >
+                                <strong>{preset.name}</strong>
+                                <span>
+                                  {preset.type === "percentage"
+                                    ? `${preset.value}%`
+                                    : money(preset.value)}
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="total-box">
+                  <span>
+                    {budget.discountAmount ? "Total" : "Total do orçamento"}
+                  </span>
+                  <strong>{money(finalTotal)}</strong>
+                </div>
               </div>
             </section>
 
@@ -1897,8 +2080,24 @@ export function BudgetApplication() {
                   </p>
                 </div>
                 <div>
-                  <span>VALOR TOTAL</span>
-                  <strong>{money(total)}</strong>
+                  {budget.discountAmount ? (
+                    <>
+                      <p>
+                        <span>Subtotal:</span> {money(total)}
+                      </p>
+                      <p>
+                        <span>Desconto de {budget.discountLabel}:</span>{" "}
+                        {money(budget.discountAmount)}
+                      </p>
+                      <span>VALOR TOTAL</span>
+                      <strong>{money(finalTotal)}</strong>
+                    </>
+                  ) : (
+                    <>
+                      <span>VALOR TOTAL</span>
+                      <strong>{money(total)}</strong>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="paper-notes">
@@ -1985,7 +2184,7 @@ export function BudgetApplication() {
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
-                    setHistoryVisibleCount(10);
+                    setHistoryVisibleCount(5);
                   }}
                 />
               </div>
@@ -1994,7 +2193,7 @@ export function BudgetApplication() {
                 value={statusFilter}
                 onChange={(value) => {
                   setStatusFilter(value);
-                  setHistoryVisibleCount(10);
+                  setHistoryVisibleCount(5);
                 }}
                 options={[
                   "Todos",
@@ -2010,7 +2209,7 @@ export function BudgetApplication() {
                 value={periodFilter}
                 onChange={(value) => {
                   setPeriodFilter(value);
-                  setHistoryVisibleCount(10);
+                  setHistoryVisibleCount(5);
                 }}
                 options={[
                   { value: "Todos", label: "Todo o período" },
@@ -2069,6 +2268,22 @@ export function BudgetApplication() {
                     <button onClick={() => openBudget(item)}>
                       {isEmployee ? "Visualizar" : "Abrir"}
                     </button>
+                    {!isEmployee && item.status === "Aprovado" && (
+                      <button
+                        className="cancel-action"
+                        onClick={() => void handleCancelBudget(item.id)}
+                      >
+                        Cancelar
+                      </button>
+                    )}
+                    {!isEmployee && item.status === "Cancelado" && (
+                      <button
+                        className="restore-action"
+                        onClick={() => void handleRestoreBudget(item.id)}
+                      >
+                        Restaurar
+                      </button>
+                    )}
                     {!isEmployee && (
                       <button
                         className="delete-action"
@@ -2089,18 +2304,18 @@ export function BudgetApplication() {
                 </div>
               )}
             </div>
-            {filtered.length > 10 && (
+            {filtered.length > 5 && (
               <div className="load-controls">
                 <span>
                   Exibindo {Math.min(historyVisibleCount, filtered.length)} de{" "}
                   {filtered.length}
                 </span>
-                {historyVisibleCount > 10 && (
+                {historyVisibleCount > 5 && (
                   <button
                     className="button ghost"
-                    onClick={() => setHistoryVisibleCount(10)}
+                    onClick={() => setHistoryVisibleCount(5)}
                   >
-                    ← Voltar para 10
+                    ← Voltar ao início
                   </button>
                 )}
                 {historyVisibleCount < filtered.length && (
@@ -3290,6 +3505,8 @@ export function BudgetApplication() {
 
         {tab === "billing" && <BillingOverview />}
 
+        {tab === "financeiro" && <FinancialPanel saved={saved} />}
+
         {tab === "settings" && (
           <section className="settings-layout">
             <div className="settings-menu card">
@@ -3310,6 +3527,12 @@ export function BudgetApplication() {
                 onClick={() => setSettingsSection("email")}
               >
                 Alterar e-mail
+              </button>
+              <button
+                className={settingsSection === "discount" ? "active" : ""}
+                onClick={() => setSettingsSection("discount")}
+              >
+                Desconto
               </button>
             </div>
             {settingsSection === "company" && (
@@ -3555,6 +3778,130 @@ export function BudgetApplication() {
                 >
                   {securitySaving ? "Enviando..." : "Alterar e-mail"}
                 </button>
+              </div>
+            )}
+
+            {settingsSection === "discount" && (
+              <div className="card settings-form">
+                <div className="section-title">
+                  <span>％</span>
+                  <div>
+                    <h2>Descontos</h2>
+                    <p>
+                      Crie descontos predefinidos para aplicar nos orçamentos
+                    </p>
+                  </div>
+                </div>
+                <div className="form-grid">
+                  <label className="wide">
+                    Nome do desconto
+                    <input
+                      placeholder="Ex.: Desconto especial, Promoção"
+                      value={discountDraft.name}
+                      onChange={(e) =>
+                        setDiscountDraft({
+                          ...discountDraft,
+                          name: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Tipo
+                    <SmoothSelect
+                      ariaLabel="Tipo de desconto"
+                      value={discountDraft.type}
+                      options={[
+                        { value: "percentage", label: "Porcentagem (%)" },
+                        { value: "fixed", label: "Valor fixo (R$)" },
+                      ]}
+                      onChange={(value) =>
+                        setDiscountDraft({
+                          ...discountDraft,
+                          type: value as "percentage" | "fixed",
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Valor
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      placeholder={
+                        discountDraft.type === "percentage"
+                          ? "Ex.: 10"
+                          : "Ex.: 50,00"
+                      }
+                      value={discountDraft.value || ""}
+                      onChange={(e) =>
+                        setDiscountDraft({
+                          ...discountDraft,
+                          value: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="service-form-actions">
+                  <button
+                    className="button primary registry-save"
+                    onClick={() => void registerDiscount()}
+                  >
+                    {discountDraft.id
+                      ? "✓ Atualizar desconto"
+                      : "＋ Salvar desconto"}
+                  </button>
+                  {discountDraft.id && (
+                    <button
+                      className="button ghost registry-save"
+                      onClick={clearDiscountDraft}
+                    >
+                      Cancelar edição
+                    </button>
+                  )}
+                </div>
+                <div className="supplier-table discount-table">
+                  <div className="supplier-row supplier-head">
+                    <span>Nome</span>
+                    <span>Tipo</span>
+                    <span>Valor</span>
+                    <span>Ações</span>
+                  </div>
+                  {appSettings.discounts.map((discount) => (
+                    <div className="supplier-row" key={discount.id}>
+                      <strong>{discount.name}</strong>
+                      <span>
+                        {discount.type === "percentage"
+                          ? "Porcentagem"
+                          : "Valor fixo"}
+                      </span>
+                      <span>
+                        {discount.type === "percentage"
+                          ? `${discount.value}%`
+                          : money(discount.value)}
+                      </span>
+                      <div className="supplier-actions">
+                        <button onClick={() => setDiscountDraft(discount)}>
+                          Editar
+                        </button>
+                        <button
+                          className="delete-service"
+                          onClick={() => void removeDiscountPreset(discount.id)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {!appSettings.discounts.length && (
+                    <div className="empty-history">
+                      <strong>Nenhum desconto cadastrado</strong>
+                      <span>Adicione o primeiro desconto acima.</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </section>

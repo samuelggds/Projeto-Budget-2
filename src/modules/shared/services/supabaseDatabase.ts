@@ -4,6 +4,7 @@ import type { Service } from "../../services/types/Service";
 import { supabase } from "../../auth/services/supabase";
 import type { AppSettings } from "../../settings/types/AppSettings";
 import { DEFAULT_APP_SETTINGS } from "../../settings/types/AppSettings";
+import type { DiscountPreset } from "../../budgets/types/DiscountPreset";
 import type { Part } from "../../stock/types/Part";
 import type { Supplier } from "../../suppliers/types/Supplier";
 import type { Employee } from "../../employees/types/Employee";
@@ -17,6 +18,7 @@ type DatabaseStatus =
   | "RECUSADO"
   | "EM_ANDAMENTO"
   | "APROVADO"
+  | "CANCELADO"
   | "PAGO";
 
 const toDatabaseStatus: Record<BudgetStatus, DatabaseStatus> = {
@@ -24,6 +26,7 @@ const toDatabaseStatus: Record<BudgetStatus, DatabaseStatus> = {
   Recusado: "RECUSADO",
   "Em andamento": "EM_ANDAMENTO",
   Aprovado: "APROVADO",
+  Cancelado: "CANCELADO",
   Pago: "PAGO",
 };
 
@@ -32,6 +35,7 @@ const fromDatabaseStatus: Record<DatabaseStatus, BudgetStatus> = {
   RECUSADO: "Recusado",
   EM_ANDAMENTO: "Em andamento",
   APROVADO: "Aprovado",
+  CANCELADO: "Cancelado",
   PAGO: "Pago",
 };
 
@@ -74,6 +78,9 @@ function mapAppSettings(row: Record<string, unknown> | null): AppSettings {
     email: text(row.email),
     address: text(row.address),
     logoDataUrl: text(row.logo_data_url),
+    discounts: Array.isArray(row.discounts)
+      ? (row.discounts as DiscountPreset[])
+      : [],
   };
 }
 
@@ -196,6 +203,10 @@ export async function loadDatabase() {
       stockDeductedAt: row.stock_deducted_at
         ? text(row.stock_deducted_at)
         : undefined,
+      discountLabel: row.discount_label ? text(row.discount_label) : undefined,
+      discountAmount: row.discount_amount
+        ? number(row.discount_amount)
+        : undefined,
       items: items.map((item) => ({
         id: text(item.id),
         serviceId: text(item.service_id),
@@ -232,6 +243,7 @@ export async function saveAppSettingsToDatabase(settings: AppSettings) {
       email: settings.email || null,
       address: settings.address || null,
       logo_data_url: settings.logoDataUrl || null,
+      discounts: settings.discounts,
       updated_at: new Date().toISOString(),
     })
     .select()
@@ -392,6 +404,20 @@ export async function approveBudgetAndDeductStock(budget: Budget) {
   };
 }
 
+export async function cancelApprovedBudget(budgetId: string) {
+  const { error } = await supabase.rpc("cancel_approved_budget", {
+    target_budget_id: budgetId,
+  });
+  assertNoError(error);
+}
+
+export async function restoreCancelledBudget(budgetId: string) {
+  const { error } = await supabase.rpc("restore_cancelled_budget", {
+    target_budget_id: budgetId,
+  });
+  assertNoError(error);
+}
+
 export async function saveClientToDatabase(client: Client) {
   const { data, error } = await supabase
     .from("clients")
@@ -454,6 +480,8 @@ export async function saveBudgetToDatabase(budget: Budget) {
     payment: budget.payment || null,
     notes: budget.notes || null,
     pdf_url: budget.pdfUrl || null,
+    discount_label: budget.discountLabel || null,
+    discount_amount: budget.discountAmount ?? null,
     created_at: createdAt,
     updated_at: updatedAt,
   });

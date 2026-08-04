@@ -1,14 +1,17 @@
-import type { Budget, BudgetItem } from '../types/Budget'
+import type { Budget, BudgetItem } from "../types/Budget";
 
 export function formatMoney(value: number) {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value || 0)
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value || 0);
 }
 
 export const calculateItemTotal = (item: BudgetItem) =>
-  item.quantity * item.unitPrice
+  item.quantity * item.unitPrice;
 
 export const calculateBudgetTotal = (budget: Budget) =>
-  budget.items.reduce((total, item) => total + calculateItemTotal(item), 0)
+  budget.items.reduce((total, item) => total + calculateItemTotal(item), 0);
+
+export const calculateFinalTotal = (budget: Budget): number =>
+  Math.max(0, calculateBudgetTotal(budget) - (budget.discountAmount || 0));

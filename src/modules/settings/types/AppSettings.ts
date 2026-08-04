@@ -1,3 +1,5 @@
+import type { DiscountPreset } from "../../budgets/types/DiscountPreset";
+
 export type AppSettings = {
   companyName: string;
   appName: string;
@@ -7,6 +9,7 @@ export type AppSettings = {
   email: string;
   address: string;
   logoDataUrl: string;
+  discounts: DiscountPreset[];
 };
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -18,4 +21,5 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   email: "",
   address: "",
   logoDataUrl: "",
+  discounts: [],
 };

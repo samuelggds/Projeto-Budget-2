@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Budget, BudgetItem } from "../types/Budget";
 import {
   calculateBudgetTotal,
+  calculateFinalTotal,
   calculateItemTotal,
   formatMoney,
 } from "./budgetCalculations";
@@ -57,5 +58,21 @@ describe("cálculos do orçamento", () => {
   it("formata valores em reais", () => {
     expect(formatMoney(1250.5)).toContain("1.250,50");
     expect(formatMoney(0)).toContain("0,00");
+  });
+});
+
+describe("calculateFinalTotal", () => {
+  it("retorna o subtotal quando não há desconto", () => {
+    expect(calculateFinalTotal(budgetWith([item(2, 100)]))).toBe(200);
+  });
+
+  it("deduz o desconto fixo do total", () => {
+    const budget = { ...budgetWith([item(2, 100)]), discountAmount: 30 };
+    expect(calculateFinalTotal(budget)).toBe(170);
+  });
+
+  it("nunca retorna valor negativo", () => {
+    const budget = { ...budgetWith([item(1, 50)]), discountAmount: 200 };
+    expect(calculateFinalTotal(budget)).toBe(0);
   });
 });
