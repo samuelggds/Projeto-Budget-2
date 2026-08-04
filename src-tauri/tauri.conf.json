@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Ferdinando e Ariana Refrigeracao",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "identifier": "com.ferdinandogeariana.refrigeracao",
   "build": {
     "frontendDist": "../dist",
@@ -39,7 +39,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJDQkZFRjBEOEFDQURFNzkKUldSNTNzcUtEZSsvdkJMdk5vWXpXWEtTckFOb2tmZWcrNjBMZ05BZithOEltQmE3aGZhOEJlc2cK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5QzJGM0NEQ0ExOUU0RjAKUldUdzVCbkt6ZlBDK1RBWWVMR3RndE5Jd3lVQVlQNHdISVZHeE9UbWhpUG1JNGVkQXMwTm4rQzIK",
       "endpoints": [
         "https://github.com/samuelggds/Projeto-Budget-2/releases/latest/download/latest.json"
       ],
