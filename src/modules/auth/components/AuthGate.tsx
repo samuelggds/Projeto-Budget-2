@@ -75,6 +75,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
+  // Poll every 5s when blocked so redirect happens immediately after payment, as fallback to Realtime
+  useEffect(() => {
+    if (!user || !subscription || subscriptionAllowsAccess(subscription))
+      return;
+    const interval = setInterval(async () => {
+      const billing = await loadBilling().catch(() => null);
+      if (billing) setSubscription(billing.subscription);
+    }, 5_000);
+    return () => clearInterval(interval);
+  }, [user, subscription?.status, subscription?.billingEnabled]);
+
   if (loading)
     return (
       <div className="auth-loading">
