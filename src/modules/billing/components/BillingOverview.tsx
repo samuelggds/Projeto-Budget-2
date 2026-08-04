@@ -15,6 +15,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [generating, setGenerating] = useState(false);
   const [visibleInvoiceCount, setVisibleInvoiceCount] = useState(5);
 
   const refresh = async () => {
@@ -70,8 +71,8 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
         try {
           await refreshSubscriptionCharge();
           await refresh();
-        } catch {
-          // O próximo ciclo tenta novamente; a tela continua disponível para pagamento.
+        } catch (err) {
+          setMessage((err as Error).message);
         }
         if (!cancelled) schedule();
       }, delay);
@@ -154,6 +155,26 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               {pending ? money(pending.amount) : "Nenhuma cobrança pendente"}
             </h2>
           </div>
+          {!pending && subscription.status === "BLOCKED" && (
+            <button
+              className="button primary"
+              disabled={generating}
+              onClick={async () => {
+                setGenerating(true);
+                setMessage("");
+                try {
+                  await refreshSubscriptionCharge();
+                  await refresh();
+                } catch (err) {
+                  setMessage((err as Error).message);
+                } finally {
+                  setGenerating(false);
+                }
+              }}
+            >
+              {generating ? "Gerando cobrança..." : "Gerar cobrança PIX"}
+            </button>
+          )}
           {pending?.pixQrCodeBase64 && (
             <img
               src={`data:image/png;base64,${pending.pixQrCodeBase64}`}
