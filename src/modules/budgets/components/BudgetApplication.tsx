@@ -4225,13 +4225,15 @@ export function BudgetApplication() {
                     </p>
                   </div>
                 </div>
-                {funcionarioEmail && (
-                  <div className="security-notice">
-                    <strong>E-mail atual</strong>
-                    <span>{funcionarioEmail}</span>
-                  </div>
-                )}
-                <div className="security-fields email-security-fields">
+                <div className="security-fields">
+                  <label>
+                    E-mail atual
+                    <input
+                      value={funcionarioEmail || "Carregando..."}
+                      readOnly
+                      aria-readonly="true"
+                    />
+                  </label>
                   <label>
                     Novo e-mail (opcional)
                     <input
@@ -4242,8 +4244,6 @@ export function BudgetApplication() {
                       onChange={(e) => setEmpNewEmail(e.target.value)}
                     />
                   </label>
-                </div>
-                <div className="security-fields">
                   <label>
                     Nova senha (opcional)
                     <PasswordInput
