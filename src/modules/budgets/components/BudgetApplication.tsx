@@ -52,6 +52,7 @@ import {
 import type { Part } from "../../stock/types/Part";
 import { BillingOverview } from "../../billing/components/BillingOverview";
 import { FinancialPanel } from "./FinancialPanel";
+import { MaintenancePlans } from "../../maintenance/components/MaintenancePlans";
 import { useAppRole } from "../../auth/context/appAccessContext";
 import { PasswordInput } from "../../shared/components/PasswordInput";
 import type { Supplier } from "../../suppliers/types/Supplier";
@@ -173,6 +174,7 @@ export function BudgetApplication() {
     | "employees"
     | "billing"
     | "financeiro"
+    | "manutencao"
     | "settings"
   >("new");
   const [preview, setPreview] = useState(false);
@@ -265,6 +267,7 @@ export function BudgetApplication() {
   const [newAccountEmail, setNewAccountEmail] = useState("");
   const [securitySaving, setSecuritySaving] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const bgInputRef = useRef<HTMLInputElement>(null);
 
   const total = useMemo(() => calculateBudgetTotal(budget), [budget]);
   const finalTotal = useMemo(() => calculateFinalTotal(budget), [budget]);
@@ -991,6 +994,19 @@ export function BudgetApplication() {
     reader.readAsDataURL(file);
   };
 
+  const choosePdfBackground = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/"))
+      return notify("Selecione uma imagem válida");
+    if (file.size > 5 * 1024 * 1024)
+      return notify("A imagem deve ter no máximo 5 MB");
+    const reader = new FileReader();
+    reader.onload = () =>
+      updateAppSetting("pdfBackgroundUrl", String(reader.result || ""));
+    reader.onerror = () => notify("Não foi possível carregar a imagem");
+    reader.readAsDataURL(file);
+  };
+
   const saveAppSettings = async () => {
     if (
       !appSettings.companyName.trim() ||
@@ -998,6 +1014,26 @@ export function BudgetApplication() {
       !appSettings.segment.trim()
     )
       return notify("Preencha os nomes da marca");
+    if (appSettings.phone && !hasValidPhone(appSettings.phone))
+      return notify(
+        "Telefone principal inválido. Use o formato (00) 00000-0000",
+        "error",
+      );
+    if (appSettings.phone2 && !hasValidPhone(appSettings.phone2))
+      return notify(
+        "Telefone 2 inválido. Use o formato (00) 00000-0000",
+        "error",
+      );
+    if (appSettings.phone3 && !hasValidPhone(appSettings.phone3))
+      return notify(
+        "Telefone 3 inválido. Use o formato (00) 00000-0000",
+        "error",
+      );
+    if (appSettings.phone4 && !hasValidPhone(appSettings.phone4))
+      return notify(
+        "Telefone 4 inválido. Use o formato (00) 00000-0000",
+        "error",
+      );
     try {
       const savedSettings = await saveAppSettingsToDatabase(appSettings);
       setAppSettings(savedSettings);
@@ -1055,6 +1091,27 @@ export function BudgetApplication() {
   };
 
   const brandLogo = appSettings.logoDataUrl || "/logo-placeholder.svg";
+
+  const [fadedLogo, setFadedLogo] = useState("");
+  useEffect(() => {
+    if (!brandLogo) {
+      setFadedLogo("");
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.globalAlpha = 0.75;
+      ctx.drawImage(img, 0, 0);
+      setFadedLogo(canvas.toDataURL("image/png"));
+    };
+    img.src = brandLogo;
+  }, [brandLogo]);
+
   const brandInitials =
     appSettings.companyName
       .split(/\s+/)
@@ -1127,12 +1184,14 @@ export function BudgetApplication() {
   };
 
   const saveBudget = async () => {
-    const stockError = stockValidationError(budget);
-    if (stockError)
-      return notify(
-        `Não foi possível salvar. Estoque insuficiente: ${stockError}`,
-        "error",
-      );
+    if (!budget.stockDeductedAt) {
+      const stockError = stockValidationError(budget);
+      if (stockError)
+        return notify(
+          `Não foi possível salvar. Estoque insuficiente: ${stockError}`,
+          "error",
+        );
+    }
     try {
       const current = await saveBudgetToDatabase(withDefaultItemUnit(budget));
       setBudget(current);
@@ -1193,8 +1252,9 @@ export function BudgetApplication() {
       return;
     try {
       await cancelApprovedBudget(id);
-      const { budgets } = await loadDatabase();
+      const { budgets, parts: updatedParts } = await loadDatabase();
       setSaved(budgets.map(withDefaultItemUnit));
+      setParts(updatedParts);
       notify("Orçamento cancelado e estoque restaurado");
     } catch (error) {
       notify(`Erro ao cancelar: ${(error as Error).message}`, "error");
@@ -1210,8 +1270,9 @@ export function BudgetApplication() {
       return;
     try {
       await restoreCancelledBudget(id);
-      const { budgets } = await loadDatabase();
+      const { budgets, parts: updatedParts } = await loadDatabase();
       setSaved(budgets.map(withDefaultItemUnit));
+      setParts(updatedParts);
       notify("Orçamento restaurado com sucesso");
     } catch (error) {
       notify(`Erro ao restaurar: ${(error as Error).message}`, "error");
@@ -1219,12 +1280,14 @@ export function BudgetApplication() {
   };
 
   const generateAndStorePdf = async () => {
-    const stockError = stockValidationError(budget);
-    if (stockError)
-      return notify(
-        `Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`,
-        "error",
-      );
+    if (!budget.stockDeductedAt) {
+      const stockError = stockValidationError(budget);
+      if (stockError)
+        return notify(
+          `Não foi possível gerar o PDF. Estoque insuficiente: ${stockError}`,
+          "error",
+        );
+    }
     try {
       notify("Gerando PDF...");
       const budgetAtSave = {
@@ -1359,6 +1422,7 @@ export function BudgetApplication() {
           </div>
         </div>
         <nav>
+          <span className="nav-group-label">Orçamentos</span>
           <button className={tab === "new" ? "active" : ""} onClick={newBudget}>
             <i>＋</i>Novo orçamento
           </button>
@@ -1369,6 +1433,7 @@ export function BudgetApplication() {
             <i>▤</i>
             {isEmployee ? "Histórico" : "Orçamentos"}
           </button>
+          <span className="nav-group-label">Cadastros</span>
           <button
             className={tab === "clients" ? "active" : ""}
             onClick={() => setTab("clients")}
@@ -1388,12 +1453,15 @@ export function BudgetApplication() {
             <i>▣</i>Estoque
           </button>
           {!isEmployee && (
-            <button
-              className={tab === "suppliers" ? "active" : ""}
-              onClick={() => setTab("suppliers")}
-            >
-              <i>♧</i>Fornecedores
-            </button>
+            <>
+              <span className="nav-group-label">Pagamentos</span>
+              <button
+                className={tab === "suppliers" ? "active" : ""}
+                onClick={() => setTab("suppliers")}
+              >
+                <i>♧</i>Fornecedores
+              </button>
+            </>
           )}
           {!isEmployee && (
             <button
@@ -1404,12 +1472,15 @@ export function BudgetApplication() {
             </button>
           )}
           {!isEmployee && (
-            <button
-              className={tab === "billing" ? "active" : ""}
-              onClick={() => setTab("billing")}
-            >
-              <i>R$</i>Mensalidade
-            </button>
+            <>
+              <span className="nav-group-label">Financeiro</span>
+              <button
+                className={tab === "billing" ? "active" : ""}
+                onClick={() => setTab("billing")}
+              >
+                <i>R$</i>Mensalidade
+              </button>
+            </>
           )}
           {!isEmployee && (
             <button
@@ -1420,6 +1491,17 @@ export function BudgetApplication() {
             </button>
           )}
           {!isEmployee && (
+            <>
+              <span className="nav-group-label">Sistema</span>
+              <button
+                className={tab === "manutencao" ? "active" : ""}
+                onClick={() => setTab("manutencao")}
+              >
+                <i>🔧</i>Manutenção
+              </button>
+            </>
+          )}
+          {!isEmployee && (
             <button
               className={tab === "settings" ? "active" : ""}
               onClick={() => setTab("settings")}
@@ -1428,11 +1510,6 @@ export function BudgetApplication() {
             </button>
           )}
         </nav>
-        <div className="sidebar-card">
-          <span>Atalho rápido</span>
-          <strong>Crie, salve e envie seus orçamentos em minutos.</strong>
-          <button onClick={newBudget}>Criar agora →</button>
-        </div>
         <div className="profile">
           <span>{brandInitials}</span>
           <div>
@@ -1476,7 +1553,9 @@ export function BudgetApplication() {
                               ? "Mensalidade"
                               : tab === "financeiro"
                                 ? "Financeiro"
-                                : "Configurações"}
+                                : tab === "manutencao"
+                                  ? "Planos de Manutenção"
+                                  : "Configurações"}
             </h1>
             <p>
               {tab === "new"
@@ -1505,7 +1584,9 @@ export function BudgetApplication() {
                               ? "Acompanhe vencimentos, pagamentos e faturas da assinatura."
                               : tab === "financeiro"
                                 ? "Acompanhe o faturamento mensal e o total acumulado dos orçamentos."
-                                : "Personalize os dados exibidos nos orçamentos."}
+                                : tab === "manutencao"
+                                  ? "Cadastre equipamentos e visualize as próximas manutenções no calendário."
+                                  : "Personalize os dados exibidos nos orçamentos."}
             </p>
           </div>
           {tab === "saved" && (
@@ -1964,13 +2045,23 @@ export function BudgetApplication() {
             >
               <div className="paper-head">
                 <img
-                  src={brandLogo}
+                  src={fadedLogo || brandLogo}
                   alt={`Logo de ${appSettings.companyName}`}
                 />
                 <div>
                   <h2>{appSettings.companyName.toUpperCase()}</h2>
                   <p>{appSettings.address || "Endereço não informado"}</p>
-                  <p>{appSettings.phone || "Telefone não informado"}</p>
+                  <p>
+                    {[
+                      { label: "Tel. 1", value: appSettings.phone },
+                      { label: "Tel. 2", value: appSettings.phone2 },
+                      { label: "Tel. 3", value: appSettings.phone3 },
+                      { label: "Tel. 4", value: appSettings.phone4 },
+                    ]
+                      .filter((t) => t.value)
+                      .map((t) => `${t.label}: ${t.value}`)
+                      .join(" · ") || "Telefone não informado"}
+                  </p>
                   <p>
                     {appSettings.document
                       ? `CNPJ/CPF ${appSettings.document}`
@@ -3507,6 +3598,8 @@ export function BudgetApplication() {
 
         {tab === "financeiro" && <FinancialPanel saved={saved} />}
 
+        {tab === "manutencao" && <MaintenancePlans />}
+
         {tab === "settings" && (
           <section className="settings-layout">
             <div className="settings-menu card">
@@ -3581,6 +3674,51 @@ export function BudgetApplication() {
                     )}
                   </div>
                 </div>
+                <div className="logo-upload">
+                  <div className="pdf-bg-preview">
+                    {appSettings.pdfBackgroundUrl ? (
+                      <img
+                        src={appSettings.pdfBackgroundUrl}
+                        alt="Fundo do PDF"
+                      />
+                    ) : (
+                      <span>Sem imagem</span>
+                    )}
+                  </div>
+                  <div>
+                    <strong>Imagem de fundo do PDF</strong>
+                    <p>
+                      {appSettings.pdfBackgroundUrl
+                        ? "Imagem aplicada como marca d'água no orçamento."
+                        : "Adicione uma imagem de fundo para o PDF do orçamento."}
+                    </p>
+                    <input
+                      ref={bgInputRef}
+                      className="logo-file-input"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(event) =>
+                        choosePdfBackground(event.target.files?.[0])
+                      }
+                    />
+                    <button
+                      className="button ghost"
+                      onClick={() => bgInputRef.current?.click()}
+                    >
+                      {appSettings.pdfBackgroundUrl
+                        ? "Alterar imagem"
+                        : "Escolher imagem"}
+                    </button>
+                    {appSettings.pdfBackgroundUrl && (
+                      <button
+                        className="button danger remove-logo-button"
+                        onClick={() => updateAppSetting("pdfBackgroundUrl", "")}
+                      >
+                        Remover imagem
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <div className="form-grid">
                   <label>
                     Nome da empresa
@@ -3619,13 +3757,87 @@ export function BudgetApplication() {
                     />
                   </label>
                   <label>
-                    Telefone
+                    Telefone principal
                     <input
                       value={appSettings.phone}
+                      className={
+                        appSettings.phone && !hasValidPhone(appSettings.phone)
+                          ? "input-error"
+                          : ""
+                      }
+                      placeholder="(00) 00000-0000"
                       onChange={(event) =>
                         updateAppSetting("phone", event.target.value)
                       }
                     />
+                    {appSettings.phone && !hasValidPhone(appSettings.phone) && (
+                      <span className="field-error">
+                        Formato inválido. Ex.: (85) 99999-9999
+                      </span>
+                    )}
+                  </label>
+                  <label>
+                    Telefone 2
+                    <input
+                      placeholder="(00) 00000-0000 (opcional)"
+                      value={appSettings.phone2}
+                      className={
+                        appSettings.phone2 && !hasValidPhone(appSettings.phone2)
+                          ? "input-error"
+                          : ""
+                      }
+                      onChange={(event) =>
+                        updateAppSetting("phone2", event.target.value)
+                      }
+                    />
+                    {appSettings.phone2 &&
+                      !hasValidPhone(appSettings.phone2) && (
+                        <span className="field-error">
+                          Formato inválido. Ex.: (85) 99999-9999
+                        </span>
+                      )}
+                  </label>
+                  <label>
+                    Telefone 3
+                    <input
+                      placeholder="(00) 00000-0000 (opcional)"
+                      value={appSettings.phone3}
+                      className={
+                        appSettings.phone3 && !hasValidPhone(appSettings.phone3)
+                          ? "input-error"
+                          : ""
+                      }
+                      onChange={(event) =>
+                        updateAppSetting("phone3", event.target.value)
+                      }
+                    />
+                    {appSettings.phone3 &&
+                      !hasValidPhone(appSettings.phone3) && (
+                        <span className="field-error">
+                          Formato inválido. Ex.: (85) 99999-9999
+                        </span>
+                      )}
+                  </label>
+                  <label>
+                    Telefone 4
+                    <input
+                      placeholder="(00) 00000-0000 (opcional)"
+                      value={appSettings.phone4}
+                      className={
+                        appSettings.phone4 && !hasValidPhone(appSettings.phone4)
+                          ? "input-error"
+                          : ""
+                      }
+                      onChange={(event) =>
+                        updateAppSetting("phone4", event.target.value)
+                      }
+                    />
+                    {appSettings.phone4 &&
+                      !hasValidPhone(appSettings.phone4) && (
+                        <span className="field-error">
+                          Formato inválido. Ex.: (85) 99999-9999
+                        </span>
+                      )}
                   </label>
                   <label>
                     E-mail

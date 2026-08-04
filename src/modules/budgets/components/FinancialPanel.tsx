@@ -6,6 +6,16 @@ import {
 } from "../services/budgetCalculations";
 import { SmoothSelect } from "../../shared/components/SmoothSelect";
 
+const partsTotal = (b: Budget) =>
+  b.items
+    .filter((i) => i.partId)
+    .reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+
+const servicesTotal = (b: Budget) =>
+  b.items
+    .filter((i) => !i.partId)
+    .reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+
 interface Props {
   saved: Budget[];
 }
@@ -59,8 +69,12 @@ export function FinancialPanel({ saved }: Props) {
     monthlyBudgets,
     monthlyTotal,
     monthlyPaid,
+    monthlyParts,
+    monthlyServices,
     allTotal,
     allPaid,
+    allParts,
+    allServices,
     history,
     allBudgets,
   } = useMemo(() => {
@@ -74,11 +88,15 @@ export function FinancialPanel({ saved }: Props) {
     const monthPaid = monthly
       .filter((b) => b.status === "Pago")
       .reduce((sum, b) => sum + calculateFinalTotal(b), 0);
+    const monthParts = monthly.reduce((sum, b) => sum + partsTotal(b), 0);
+    const monthServices = monthly.reduce((sum, b) => sum + servicesTotal(b), 0);
 
     const total = active.reduce((sum, b) => sum + calculateFinalTotal(b), 0);
     const paid = active
       .filter((b) => b.status === "Pago")
       .reduce((sum, b) => sum + calculateFinalTotal(b), 0);
+    const allParts = active.reduce((sum, b) => sum + partsTotal(b), 0);
+    const allServices = active.reduce((sum, b) => sum + servicesTotal(b), 0);
 
     const periodCutoff =
       historyMonth !== "todos" || historyPeriod === "todos"
@@ -129,8 +147,12 @@ export function FinancialPanel({ saved }: Props) {
       monthlyBudgets: monthly,
       monthlyTotal: monthTotal,
       monthlyPaid: monthPaid,
+      monthlyParts: monthParts,
+      monthlyServices: monthServices,
       allTotal: total,
       allPaid: paid,
+      allParts,
+      allServices,
       history: hist,
       allBudgets: all,
     };
@@ -170,25 +192,34 @@ export function FinancialPanel({ saved }: Props) {
             <p>{monthLabel(currentYearMonth)}</p>
           </div>
         </div>
-        <div className="financial-stats">
+        <div className="financial-stats financial-stats-3">
+          <div className="financial-stat">
+            <span>🔩 Peças</span>
+            <strong>{money(monthlyParts)}</strong>
+          </div>
+          <div className="financial-stat">
+            <span>🔧 Serviços</span>
+            <strong>{money(monthlyServices)}</strong>
+          </div>
           <div className="financial-stat">
             <span>Total do mês</span>
             <strong className="financial-highlight">
               {money(monthlyTotal)}
             </strong>
           </div>
-          <div className="financial-stat">
-            <span>Orçamentos</span>
-            <strong>{monthlyBudgets.length}</strong>
-          </div>
-          <div className="financial-stat">
-            <span>Pagos</span>
-            <strong className="financial-paid">{money(monthlyPaid)}</strong>
-          </div>
         </div>
-        <p className="financial-reset-notice">
-          Zera automaticamente no início de cada mês
-        </p>
+        <div className="financial-card-footer">
+          <span>
+            {monthlyBudgets.length} orçamento
+            {monthlyBudgets.length !== 1 ? "s" : ""}
+          </span>
+          <span className="financial-paid">{money(monthlyPaid)} recebido</span>
+        </div>
+        <div className="financial-card-footer">
+          <span className="financial-reset-notice">
+            Zera automaticamente no início de cada mês
+          </span>
+        </div>
       </div>
 
       <div className="financial-total-card card">
@@ -199,25 +230,30 @@ export function FinancialPanel({ saved }: Props) {
             <p>Todos os orçamentos (exceto recusados e cancelados)</p>
           </div>
         </div>
-        <div className="financial-stats">
+        <div className="financial-stats financial-stats-3">
+          <div className="financial-stat">
+            <span>🔩 Peças</span>
+            <strong>{money(allParts)}</strong>
+          </div>
+          <div className="financial-stat">
+            <span>🔧 Serviços</span>
+            <strong>{money(allServices)}</strong>
+          </div>
           <div className="financial-stat">
             <span>Total acumulado</span>
             <strong className="financial-highlight">{money(allTotal)}</strong>
           </div>
-          <div className="financial-stat">
-            <span>Orçamentos</span>
-            <strong>
-              {
-                saved.filter(
-                  (b) => b.status !== "Recusado" && b.status !== "Cancelado",
-                ).length
-              }
-            </strong>
-          </div>
-          <div className="financial-stat">
-            <span>Total recebido</span>
-            <strong className="financial-paid">{money(allPaid)}</strong>
-          </div>
+        </div>
+        <div className="financial-card-footer">
+          <span>
+            {
+              saved.filter(
+                (b) => b.status !== "Recusado" && b.status !== "Cancelado",
+              ).length
+            }{" "}
+            orçamentos
+          </span>
+          <span className="financial-paid">{money(allPaid)} recebido</span>
         </div>
       </div>
 

@@ -75,9 +75,13 @@ function mapAppSettings(row: Record<string, unknown> | null): AppSettings {
     segment: text(row.segment) || DEFAULT_APP_SETTINGS.segment,
     document: text(row.document),
     phone: text(row.phone),
+    phone2: text(row.phone2),
+    phone3: text(row.phone3),
+    phone4: text(row.phone4),
     email: text(row.email),
     address: text(row.address),
     logoDataUrl: text(row.logo_data_url),
+    pdfBackgroundUrl: text(row.pdf_background_url),
     discounts: Array.isArray(row.discounts)
       ? (row.discounts as DiscountPreset[])
       : [],
@@ -240,9 +244,13 @@ export async function saveAppSettingsToDatabase(settings: AppSettings) {
       segment: settings.segment,
       document: settings.document || null,
       phone: settings.phone || null,
+      phone2: settings.phone2 || null,
+      phone3: settings.phone3 || null,
+      phone4: settings.phone4 || null,
       email: settings.email || null,
       address: settings.address || null,
       logo_data_url: settings.logoDataUrl || null,
+      pdf_background_url: settings.pdfBackgroundUrl || null,
       discounts: settings.discounts,
       updated_at: new Date().toISOString(),
     })
