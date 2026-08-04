@@ -84,7 +84,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       if (billing) setSubscription(billing.subscription);
     }, 5_000);
     return () => clearInterval(interval);
-  }, [user, subscription?.status, subscription?.billingEnabled]);
+  }, [user, subscription?.status, subscription?.billingEnabled, subscription]);
 
   if (loading)
     return (
