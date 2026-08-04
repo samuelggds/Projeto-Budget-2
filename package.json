@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "tauri": "tauri",
     "check": "node scripts/check.mjs",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",

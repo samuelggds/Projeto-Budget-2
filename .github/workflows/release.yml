@@ -43,3 +43,4 @@ jobs:
           releaseBody: "Nova versão do aplicativo disponível. O app atualizará automaticamente."
           releaseDraft: false
           prerelease: false
+          tauriScript: npx tauri
