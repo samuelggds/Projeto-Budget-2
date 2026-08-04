@@ -8,7 +8,13 @@ export const isAuthConfigured = Boolean(url && publishableKey);
 export const supabase = createClient(
   url || "https://configuracao-ausente.supabase.co",
   publishableKey || "configuracao-ausente",
-  { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } },
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  },
 );
 
 export async function updateRecoveredPassword(password: string) {
@@ -20,20 +26,33 @@ export async function updateRecoveredPassword(password: string) {
 async function confirmCurrentPassword(currentPassword: string) {
   const { data: userData, error: userError } = await supabase.auth.getUser();
   const email = userData.user?.email;
-  if (userError || !email) throw new Error("Não foi possível identificar a conta atual");
+  if (userError || !email)
+    throw new Error("Não foi possível identificar a conta atual");
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password: currentPassword });
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password: currentPassword,
+  });
   if (error) throw new Error("A senha atual está incorreta");
 }
 
-export async function changeAccountPassword(currentPassword: string, newPassword: string) {
+export async function changeAccountPassword(
+  currentPassword: string,
+  newPassword: string,
+) {
   await confirmCurrentPassword(currentPassword);
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw new Error(error.message);
 }
 
-export async function changeAccountEmail(currentPassword: string, newEmail: string) {
+export async function changeAccountEmail(
+  currentPassword: string,
+  newEmail: string,
+) {
   await confirmCurrentPassword(currentPassword);
-  const { error } = await supabase.auth.updateUser({ email: newEmail.trim().toLowerCase() });
+  const { error } = await supabase.auth.updateUser(
+    { email: newEmail.trim().toLowerCase() },
+    { emailRedirectTo: `${window.location.origin}/` },
+  );
   if (error) throw new Error(error.message);
 }
