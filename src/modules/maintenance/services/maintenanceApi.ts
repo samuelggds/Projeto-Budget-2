@@ -16,6 +16,7 @@ function mapPlan(row: Record<string, unknown>): MaintenancePlan {
     firstMaintenanceDate: text(row.first_maintenance_date),
     nextMaintenanceDate: text(row.next_maintenance_date),
     notes: text(row.notes),
+    status: (text(row.status) || "pendente") as MaintenancePlan["status"],
     createdAt: text(row.created_at),
     updatedAt: text(row.updated_at),
   };
@@ -56,6 +57,17 @@ export async function deleteMaintenancePlan(id: string): Promise<void> {
   const { error } = await supabase
     .from("maintenance_plans")
     .delete()
+    .eq("id", id);
+  assertNoError(error);
+}
+
+export async function updateMaintenancePlanStatus(
+  id: string,
+  status: NonNullable<MaintenancePlan["status"]>,
+): Promise<void> {
+  const { error } = await supabase
+    .from("maintenance_plans")
+    .update({ status, updated_at: new Date().toISOString() })
     .eq("id", id);
   assertNoError(error);
 }

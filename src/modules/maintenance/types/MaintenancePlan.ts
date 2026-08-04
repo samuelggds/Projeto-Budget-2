@@ -7,6 +7,7 @@ export interface MaintenancePlan {
   firstMaintenanceDate: string;
   nextMaintenanceDate: string;
   notes: string;
+  status?: "pendente" | "concluida" | "cancelada";
   createdAt?: string;
   updatedAt?: string;
 }

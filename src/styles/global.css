@@ -3803,6 +3803,14 @@ textarea:focus {
   background: #fee2e2;
   color: #991b1b;
 }
+.maintenance-concluida {
+  background: #dcfce7;
+  color: #166534;
+}
+.maintenance-cancelada {
+  background: #fee2e2;
+  color: #991b1b;
+}
 
 /* ── Calendário ─────────────────────────────────────────── */
 .cal-wrapper {
@@ -3898,6 +3906,11 @@ textarea:focus {
   gap: 1px;
   border-left: 3px solid #86efac;
   background: #f0fdf4;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.cal-plan-chip:hover {
+  opacity: 0.85;
 }
 .cal-chip-soon {
   border-left-color: #fdba74;
@@ -3933,6 +3946,26 @@ textarea:focus {
   color: #9a3412;
   font-size: 9px;
   font-style: italic;
+}
+.cal-chip-concluida {
+  border-left-color: #22c55e;
+  background: #f0fdf4;
+}
+.cal-chip-cancelada {
+  border-left-color: #ef4444;
+  background: #fef2f2;
+  opacity: 0.75;
+}
+.cal-chip-status {
+  font-size: 9px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.cal-chip-status-ok {
+  color: #166534;
+}
+.cal-chip-status-cancel {
+  color: #991b1b;
 }
 .cal-legend {
   display: flex;

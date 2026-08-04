@@ -4,6 +4,7 @@ import {
   deleteMaintenancePlan,
   loadMaintenancePlans,
   saveMaintenancePlan,
+  updateMaintenancePlanStatus,
 } from "../services/maintenanceApi";
 
 const EMPTY: MaintenancePlan = {
@@ -95,6 +96,30 @@ export function MaintenancePlans() {
       setPlans((prev) => prev.filter((p) => p.id !== plan.id));
       if (draft.id === plan.id) setDraft({ ...EMPTY });
       notify("Plano excluído");
+    } catch (err) {
+      notify(`Erro: ${(err as Error).message}`);
+    }
+  };
+
+  const toggleStatus = async (plan: MaintenancePlan) => {
+    const next: NonNullable<MaintenancePlan["status"]> =
+      !plan.status || plan.status === "pendente"
+        ? "concluida"
+        : plan.status === "concluida"
+          ? "cancelada"
+          : "pendente";
+    try {
+      await updateMaintenancePlanStatus(plan.id, next);
+      setPlans((prev) =>
+        prev.map((p) => (p.id === plan.id ? { ...p, status: next } : p)),
+      );
+      notify(
+        next === "concluida"
+          ? "Manutenção concluída"
+          : next === "cancelada"
+            ? "Manutenção cancelada"
+            : "Status resetado",
+      );
     } catch (err) {
       notify(`Erro: ${(err as Error).message}`);
     }
@@ -302,14 +327,26 @@ export function MaintenancePlans() {
                   </span>
                   <span>{fmtDate(p.firstMaintenanceDate)}</span>
                   <span>{fmtDate(p.nextMaintenanceDate)}</span>
-                  <span className={`maintenance-status maintenance-${urgency}`}>
-                    {days < 0
-                      ? `${Math.abs(days)}d em atraso`
-                      : days === 0
-                        ? "Hoje!"
-                        : days <= 7
-                          ? `Em ${days} dia(s)`
-                          : `Em ${days}d`}
+                  <span
+                    className={`maintenance-status ${
+                      p.status === "concluida"
+                        ? "maintenance-concluida"
+                        : p.status === "cancelada"
+                          ? "maintenance-cancelada"
+                          : `maintenance-${urgency}`
+                    }`}
+                  >
+                    {p.status === "concluida"
+                      ? "Concluída"
+                      : p.status === "cancelada"
+                        ? "Cancelada"
+                        : days < 0
+                          ? `${Math.abs(days)}d em atraso`
+                          : days === 0
+                            ? "Hoje!"
+                            : days <= 7
+                              ? `Em ${days} dia(s)`
+                              : `Em ${days}d`}
                   </span>
                   <div className="supplier-actions">
                     <button
@@ -398,11 +435,18 @@ export function MaintenancePlans() {
                       const d = daysUntil(p.nextMaintenanceDate);
                       const chipUrgency =
                         d < 0 ? "overdue" : d <= 7 ? "soon" : "ok";
+                      const chipClass =
+                        p.status === "concluida"
+                          ? "cal-chip-concluida"
+                          : p.status === "cancelada"
+                            ? "cal-chip-cancelada"
+                            : `cal-chip-${chipUrgency}`;
                       return (
                         <div
-                          className={`cal-plan-chip cal-chip-${chipUrgency}`}
+                          className={`cal-plan-chip ${chipClass}`}
                           key={p.id}
                           title={`${p.companyName} — ${p.brand} ${p.model}${p.notes ? ` | ${p.notes}` : ""}`}
+                          onClick={() => void toggleStatus(p)}
                         >
                           <strong>{p.vehiclePlate}</strong>
                           <span className="cal-chip-company">
@@ -413,6 +457,16 @@ export function MaintenancePlans() {
                           </span>
                           {p.notes && (
                             <span className="cal-chip-notes">{p.notes}</span>
+                          )}
+                          {p.status === "concluida" && (
+                            <span className="cal-chip-status cal-chip-status-ok">
+                              ✓ Concluída
+                            </span>
+                          )}
+                          {p.status === "cancelada" && (
+                            <span className="cal-chip-status cal-chip-status-cancel">
+                              ✗ Cancelada
+                            </span>
                           )}
                         </div>
                       );
