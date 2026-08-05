@@ -2432,15 +2432,7 @@ export function BudgetApplication() {
                       "pt-BR",
                     )}
                   </span>
-                  <b>
-                    {money(
-                      item.items.reduce(
-                        (sum, budgetItem) =>
-                          sum + budgetItem.quantity * budgetItem.unitPrice,
-                        0,
-                      ),
-                    )}
-                  </b>
+                  <b>{money(calculateFinalTotal(item))}</b>
                   <em className={`status ${item.status.toLowerCase()}`}>
                     {item.status}
                   </em>
