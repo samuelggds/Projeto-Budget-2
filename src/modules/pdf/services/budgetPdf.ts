@@ -6,17 +6,19 @@ const A4_HEIGHT_PX = Math.ceil((297 / 25.4) * 96);
 const A4_WIDTH_POINTS = 595.28;
 const A4_HEIGHT_POINTS = 841.89;
 const CAPTURE_PIXEL_RATIO = 2;
-const PAPER_PADDING_PX = (15 / 25.4) * 96;
-const LOGO_WIDTH_PX = 105;
 
 async function waitForDocumentAssets(element: HTMLElement) {
   await document.fonts.ready;
-  await Promise.all(Array.from(element.querySelectorAll("img")).map((image) => image.complete
-    ? Promise.resolve()
-    : new Promise<void>((resolve) => {
-      image.addEventListener("load", () => resolve(), { once: true });
-      image.addEventListener("error", () => resolve(), { once: true });
-    })));
+  await Promise.all(
+    Array.from(element.querySelectorAll("img")).map((image) =>
+      image.complete
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            image.addEventListener("load", () => resolve(), { once: true });
+            image.addEventListener("error", () => resolve(), { once: true });
+          }),
+    ),
+  );
 }
 
 function blobAsDataUrl(blob: Blob) {
@@ -30,45 +32,30 @@ function blobAsDataUrl(blob: Blob) {
 
 async function embedDocumentImages(element: HTMLElement) {
   const restoreImages: Array<() => void> = [];
-  await Promise.all(Array.from(element.querySelectorAll("img")).map(async (image) => {
-    const originalSource = image.getAttribute("src");
-    if (!originalSource || originalSource.startsWith("data:")) return;
+  await Promise.all(
+    Array.from(element.querySelectorAll("img")).map(async (image) => {
+      const originalSource = image.getAttribute("src");
+      if (!originalSource || originalSource.startsWith("data:")) return;
 
-    try {
-      const response = await fetch(image.currentSrc || image.src, { cache: "force-cache" });
-      if (!response.ok) return;
-      const dataUrl = await blobAsDataUrl(await response.blob());
-      restoreImages.push(() => image.setAttribute("src", originalSource));
-      image.setAttribute("src", dataUrl);
-      await image.decode().catch(() => undefined);
-    } catch {
-      // A geração continua caso uma imagem externa não possa ser incorporada.
-    }
-  }));
+      try {
+        const response = await fetch(image.currentSrc || image.src, {
+          cache: "force-cache",
+        });
+        if (!response.ok) return;
+        const dataUrl = await blobAsDataUrl(await response.blob());
+        restoreImages.push(() => image.setAttribute("src", originalSource));
+        image.setAttribute("src", dataUrl);
+        await image.decode().catch(() => undefined);
+      } catch {
+        // A geração continua caso uma imagem externa não possa ser incorporada.
+      }
+    }),
+  );
   return () => restoreImages.forEach((restore) => restore());
-}
-
-type PdfLogo = { bytes: Uint8Array; type: "png" | "jpg" };
-
-async function loadLogoForPdf(image: HTMLImageElement): Promise<PdfLogo | null> {
-  try {
-    const response = await fetch(image.currentSrc || image.src, { cache: "force-cache" });
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    const source = image.currentSrc || image.src;
-    return {
-      bytes: new Uint8Array(await blob.arrayBuffer()),
-      type: blob.type.includes("png") || source.toLowerCase().includes(".png") ? "png" : "jpg",
-    };
-  } catch {
-    return null;
-  }
 }
 
 export async function createBudgetPdf(element: HTMLElement, filename: string) {
   await waitForDocumentAssets(element);
-  const logoElement = element.querySelector<HTMLImageElement>(".paper-head img");
-  const logoData = logoElement ? await loadLogoForPdf(logoElement) : null;
   const restoreImages = await embedDocumentImages(element);
 
   let imageData: string;
@@ -100,32 +87,14 @@ export async function createBudgetPdf(element: HTMLElement, filename: string) {
   const pdfDocument = await PDFDocument.create();
   const page = pdfDocument.addPage([A4_WIDTH_POINTS, A4_HEIGHT_POINTS]);
   const image = await pdfDocument.embedPng(imageData);
-  const scale = Math.min(page.getWidth() / image.width, page.getHeight() / image.height);
-  const width = image.width * scale;
-  const height = image.height * scale;
-  const imageX = (page.getWidth() - width) / 2;
-  const imageY = (page.getHeight() - height) / 2;
 
-  page.drawImage(image, { x: imageX, y: imageY, width, height });
-
-  if (logoData) {
-    try {
-      const logo = logoData.type === "png"
-        ? await pdfDocument.embedPng(logoData.bytes)
-        : await pdfDocument.embedJpg(logoData.bytes);
-      const cssPixelInPdf = scale * CAPTURE_PIXEL_RATIO;
-      const logoWidth = LOGO_WIDTH_PX * cssPixelInPdf;
-      const logoHeight = logoWidth * (logo.height / logo.width);
-      page.drawImage(logo, {
-        x: imageX + PAPER_PADDING_PX * cssPixelInPdf,
-        y: imageY + height - PAPER_PADDING_PX * cssPixelInPdf - logoHeight,
-        width: logoWidth,
-        height: logoHeight,
-      });
-    } catch {
-      // O orçamento permanece disponível mesmo se a logo não puder ser incorporada.
-    }
-  }
+  // Fill the A4 page exactly — content is always A4 width, height is compressed to fit if needed
+  page.drawImage(image, {
+    x: 0,
+    y: 0,
+    width: A4_WIDTH_POINTS,
+    height: A4_HEIGHT_POINTS,
+  });
 
   const bytes = await pdfDocument.save();
   const blob = new Blob([Uint8Array.from(bytes)], { type: "application/pdf" });

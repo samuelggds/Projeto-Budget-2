@@ -1817,6 +1817,52 @@ textarea {
 .paper-ultra footer {
   margin-top: 20px;
 }
+/* Nível extremo para orçamentos com 20 ou mais itens */
+.paper-max {
+  padding: 5mm;
+}
+.paper-max .paper-head {
+  grid-template-columns: 70px 1fr 120px;
+  padding-bottom: 4px;
+  gap: 10px;
+}
+.paper-max .paper-head img {
+  width: 60px;
+}
+.paper-max .paper-client {
+  margin: 4px 0;
+  padding: 5px;
+}
+.paper-max .paper-client h3 {
+  margin: 2px 0 3px;
+}
+.paper-max th,
+.paper-max td {
+  padding: 2px 4px;
+  font-size: 7px;
+  line-height: 1.15;
+}
+.paper-max .paper-item-type {
+  padding: 2px 5px;
+}
+.paper-max .paper-summary {
+  margin-top: 4px;
+  grid-template-columns: 1fr 160px;
+}
+.paper-max .paper-summary > div,
+.paper-max .paper-notes {
+  padding: 5px;
+}
+.paper-max .paper-notes {
+  margin-top: 3px;
+}
+.paper-max .signatures {
+  margin-top: 10px;
+  gap: 30px 30px;
+}
+.paper-max footer {
+  margin-top: 10px;
+}
 .settings-layout {
   display: grid;
   grid-template-columns: 220px 1fr;
