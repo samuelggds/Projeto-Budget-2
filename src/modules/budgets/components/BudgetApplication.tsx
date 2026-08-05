@@ -1593,10 +1593,9 @@ export function BudgetApplication() {
       </aside>
 
       <main className="workspace">
-        <GracePeriodBanner
-          showPayButton={!isEmployee}
-          onPayClick={() => setTab("billing")}
-        />
+        {!isEmployee && (
+          <GracePeriodBanner onPayClick={() => setTab("billing")} />
+        )}
         <header className="topbar">
           <div>
             <p className="eyebrow">PAINEL DE ORÇAMENTOS</p>

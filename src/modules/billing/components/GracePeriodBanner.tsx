@@ -3,10 +3,9 @@ import { useSubscription } from "../../auth/context/appAccessContext";
 
 interface Props {
   onPayClick: () => void;
-  showPayButton?: boolean;
 }
 
-export function GracePeriodBanner({ onPayClick, showPayButton = true }: Props) {
+export function GracePeriodBanner({ onPayClick }: Props) {
   const subscription = useSubscription();
   const [now, setNow] = useState(() => Date.now());
 
@@ -37,14 +36,12 @@ export function GracePeriodBanner({ onPayClick, showPayButton = true }: Props) {
               : `Falt${daysLeft === 1 ? "a" : "am"} ${daysLeft} dia${daysLeft !== 1 ? "s" : ""} para o bloqueio. Pague a mensalidade para manter o acesso.`}
           </span>
         </div>
-        {showPayButton && (
-          <button
-            className="button primary grace-period-banner-btn"
-            onClick={onPayClick}
-          >
-            Pagar fatura
-          </button>
-        )}
+        <button
+          className="button primary grace-period-banner-btn"
+          onClick={onPayClick}
+        >
+          Pagar fatura
+        </button>
       </div>
     </div>
   );
