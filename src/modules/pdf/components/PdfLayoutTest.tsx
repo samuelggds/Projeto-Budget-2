@@ -56,11 +56,13 @@ function PaperPreview({
       >
         <span>
           {count} itens — classe:{" "}
-          {count > 12
-            ? "paper-ultra"
-            : count > 7
-              ? "paper-dense"
-              : "paper (normal)"}
+          {count > 19
+            ? "paper-max"
+            : count > 12
+              ? "paper-ultra"
+              : count > 7
+                ? "paper-dense"
+                : "paper (normal)"}
         </span>
         <button
           onClick={handleDownload}
@@ -93,12 +95,13 @@ function PaperPreview({
           }}
         />
         <article ref={ref} className={paperClass}>
+          {/* Simula paper-bg com a mesma logo para reproduzir o bug de duplicação */}
+          <div
+            className="paper-bg"
+            style={{ backgroundImage: "url(/logo-placeholder.svg)" }}
+          />
           <div className="paper-head">
-            <img
-              src=""
-              alt=""
-              style={{ width: 80, height: 40, background: "#ddd" }}
-            />
+            <img src="/logo-placeholder.svg" alt="Logo" />
             <div>
               <h2>F&amp;A REFRIGERAÇÃO</h2>
               <p>Rua de Teste, 123 · Fortaleza · CE · 60000-000</p>

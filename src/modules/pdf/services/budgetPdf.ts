@@ -58,6 +58,11 @@ export async function createBudgetPdf(element: HTMLElement, filename: string) {
   await waitForDocumentAssets(element);
   const restoreImages = await embedDocumentImages(element);
 
+  // Hide the watermark background during capture so it doesn't duplicate the logo in the PDF
+  const bg = element.querySelector<HTMLElement>(".paper-bg");
+  const bgVisibility = bg?.style.visibility ?? "";
+  if (bg) bg.style.visibility = "hidden";
+
   let imageData: string;
   try {
     const contentHeight = Math.max(A4_HEIGHT_PX, element.scrollHeight);
@@ -82,6 +87,7 @@ export async function createBudgetPdf(element: HTMLElement, filename: string) {
     });
   } finally {
     restoreImages();
+    if (bg) bg.style.visibility = bgVisibility;
   }
 
   const pdfDocument = await PDFDocument.create();
