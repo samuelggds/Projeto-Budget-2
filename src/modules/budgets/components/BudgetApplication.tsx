@@ -2112,6 +2112,14 @@ export function BudgetApplication() {
               id="budget-pdf"
               className={`paper ${budget.items.length > 12 ? "paper-ultra" : budget.items.length > 7 ? "paper-dense" : ""}`}
             >
+              {appSettings.pdfBackgroundUrl && (
+                <div
+                  className="paper-bg"
+                  style={{
+                    backgroundImage: `url(${appSettings.pdfBackgroundUrl})`,
+                  }}
+                />
+              )}
               <div className="paper-head">
                 <img
                   src={fadedLogo || brandLogo}
