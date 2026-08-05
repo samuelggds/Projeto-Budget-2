@@ -2240,6 +2240,7 @@ textarea {
 
   .card {
     max-width: 100%;
+    min-width: 0;
     padding: 17px 14px;
     border-radius: 12px;
   }
@@ -2327,6 +2328,10 @@ textarea {
   }
 
   .saved-card {
+    overflow: hidden;
+  }
+
+  .registry-list {
     overflow: hidden;
   }
 
@@ -2510,7 +2515,13 @@ textarea {
   }
 
   /* ── Suppliers / Employees ──────────────────── */
-  .supplier-table,
+  .supplier-table {
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
   .payment-history-row {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -3313,15 +3324,18 @@ textarea:focus {
   margin-top: 7px;
 }
 
+@media (min-width: 721px) and (max-width: 760px) {
+  .supplier-row {
+    min-width: 1100px;
+  }
+}
+
 @media (max-width: 760px) {
   .supplier-title {
     gap: 12px;
   }
   .supplier-title .button {
     width: 100%;
-  }
-  .supplier-row {
-    min-width: 1100px;
   }
   .payment-alert-row {
     grid-template-columns: 1fr;
