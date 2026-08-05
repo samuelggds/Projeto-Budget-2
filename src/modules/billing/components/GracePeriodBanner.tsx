@@ -19,10 +19,9 @@ export function GracePeriodBanner({ onPayClick, showPayButton = true }: Props) {
   if (subscription.status !== "GRACE" || !subscription.gracePeriodEndsAt)
     return null;
 
-  const daysLeft = Math.ceil(
-    (new Date(subscription.gracePeriodEndsAt).getTime() - now) / 86_400_000,
-  );
-  if (daysLeft < 0) return null;
+  const msLeft = new Date(subscription.gracePeriodEndsAt).getTime() - now;
+  if (msLeft <= 0) return null;
+  const daysLeft = Math.floor(msLeft / 86_400_000); // complete days remaining; 0 = last day
 
   return (
     <div className="grace-period-banner">

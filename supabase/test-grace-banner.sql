@@ -20,7 +20,7 @@ set
   activated_at              = now() - interval '2 months',
   current_period_started_at = now() - interval '32 days',
   current_period_ends_at    = now() - interval '2 days',
-  grace_period_ends_at      = now() + interval '3 days',   -- 3 dias restantes no banner
+  grace_period_ends_at      = now() + interval '3 days 4 hours',   -- 3 dias no banner (buffer de 4h evita arredondamento)
   blocked_at                = null,
   deactivated_at            = null,
   last_payment_at           = now() - interval '32 days',
@@ -38,14 +38,14 @@ insert into public.subscription_invoices (
   now() - interval '32 days',
   now() - interval '2 days',
   now() - interval '2 days',
-  now() + interval '3 days'
+  now() + interval '3 days 4 hours'
 ) on conflict (external_reference) do update set
   status             = 'PENDING',
-  grace_period_ends_at = now() + interval '3 days',
+  grace_period_ends_at = now() + interval '3 days 4 hours',
   updated_at         = now();
 
 commit;
 
 select status, grace_period_ends_at,
-       ceil(extract(epoch from (grace_period_ends_at - now())) / 86400) as dias_restantes
+       floor(extract(epoch from (grace_period_ends_at - now())) / 86400) as dias_restantes
 from public.app_subscription where id = 'main';

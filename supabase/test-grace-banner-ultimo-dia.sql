@@ -5,7 +5,7 @@ begin;
 
 update public.app_subscription
 set
-  grace_period_ends_at = now() + interval '10 hours',   -- menos de 1 dia = ceil → 1, mas hoje
+  grace_period_ends_at = now() + interval '10 hours',   -- menos de 1 dia = floor → 0 = "Último dia"
   updated_at           = now()
 where id = 'main';
 
@@ -18,5 +18,5 @@ where status = 'PENDING' and subscription_id = 'main';
 commit;
 
 select status, grace_period_ends_at,
-       ceil(extract(epoch from (grace_period_ends_at - now())) / 86400) as dias_restantes
+       floor(extract(epoch from (grace_period_ends_at - now())) / 86400) as dias_restantes
 from public.app_subscription where id = 'main';
