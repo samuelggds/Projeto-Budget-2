@@ -951,7 +951,9 @@ textarea {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
   position: relative;
-  overflow: hidden;
+  overflow: clip;
+  display: flex;
+  flex-direction: column;
 }
 .paper-bg {
   position: absolute;
@@ -1145,6 +1147,7 @@ textarea {
   border: 1px solid #aeb9c9;
   background: #e3e8f0;
   margin-top: 12px;
+  margin-bottom: 40px;
 }
 .paper-notes p {
   font-size: 9px;
@@ -1153,22 +1156,23 @@ textarea {
 .signatures {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 60px 30px;
+  gap: 8px 30px;
   text-align: center;
-  margin-top: 55px;
+  /* auto margin pushes signatures to the bottom of the A4 flex column */
+  margin-top: auto;
   font-size: 9px;
 }
 .signatures div {
   border-top: 1px solid #536079;
 }
 .signatures p {
-  margin: -54px 0 0;
+  margin: 4px 0 0;
 }
 .paper footer {
   text-align: center;
   color: #7d879a;
   font-size: 8px;
-  margin-top: 50px;
+  margin-top: 18px;
   border-top: 1px solid #b9c2d0;
   padding-top: 12px;
 }
@@ -1772,10 +1776,13 @@ textarea {
   margin-top: 11px;
 }
 .paper-dense .signatures {
-  margin-top: 36px;
+  margin-top: auto;
+}
+.paper-dense .paper-notes {
+  margin-bottom: 30px;
 }
 .paper-dense footer {
-  margin-top: 28px;
+  margin-top: 16px;
 }
 .paper-ultra {
   padding: 8mm;
@@ -1809,13 +1816,14 @@ textarea {
 }
 .paper-ultra .paper-notes {
   margin-top: 6px;
+  margin-bottom: 22px;
 }
 .paper-ultra .signatures {
-  margin-top: 28px;
-  gap: 42px 30px;
+  margin-top: auto;
+  gap: 6px 30px;
 }
 .paper-ultra footer {
-  margin-top: 20px;
+  margin-top: 12px;
 }
 /* Nível extremo para orçamentos com 20 ou mais itens */
 .paper-max {
@@ -1855,10 +1863,11 @@ textarea {
 }
 .paper-max .paper-notes {
   margin-top: 3px;
+  margin-bottom: 14px;
 }
 .paper-max .signatures {
-  margin-top: 10px;
-  gap: 30px 30px;
+  margin-top: auto;
+  gap: 5px 30px;
 }
 .paper-max footer {
   margin-top: 10px;
@@ -2851,6 +2860,215 @@ textarea {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Recibos ─────────────────────────────────────── */
+.receipt-form-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.receipt-list-actions {
+  display: flex;
+  gap: 8px;
+}
+.receipt-preview-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.receipt-preview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 210mm;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.receipt-preview-actions {
+  display: flex;
+  gap: 10px;
+}
+/* A4 paper container */
+.receipt-paper {
+  background: #fff;
+  width: 210mm;
+  height: 297mm;
+  box-shadow: 0 10px 40px #1a2e581a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.receipt-a4-inner {
+  width: calc(210mm - 28mm);
+  padding: 0;
+}
+/* The receipt box itself */
+.receipt-box {
+  border: 3px solid #111;
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.receipt-header {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 2.5px solid #111;
+}
+.receipt-title {
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  padding: 18px 28px;
+  margin: 0;
+  border-right: 2.5px solid #111;
+  flex-shrink: 0;
+  color: #111;
+}
+.receipt-header-right {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 32px;
+  padding: 14px 28px;
+}
+.receipt-number-box,
+.receipt-value-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111;
+}
+.receipt-number-box span,
+.receipt-value-box span {
+  font-weight: 400;
+  color: #333;
+}
+.receipt-value-box {
+  border: 1.5px solid #aaa;
+  border-radius: 6px;
+  padding: 6px 14px;
+  background: #f5f5f5;
+  min-width: 140px;
+}
+.receipt-body {
+  padding: 28px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.receipt-field-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.receipt-label {
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: #111;
+  flex-shrink: 0;
+}
+.receipt-line {
+  flex: 1;
+  border-bottom: 1.5px solid #111;
+  min-height: 24px;
+  font-size: 15px;
+  padding-bottom: 2px;
+  color: #111;
+}
+.receipt-clause {
+  font-size: 15px;
+  color: #111;
+  margin: 0;
+  padding-top: 4px;
+}
+.receipt-location-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: -4px;
+}
+.receipt-comma {
+  font-size: 15px;
+  color: #111;
+  padding-bottom: 2px;
+  font-weight: 600;
+}
+.receipt-city {
+  max-width: 220px;
+}
+.receipt-date {
+  max-width: 180px;
+}
+.receipt-signature-area {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.receipt-sig-line {
+  width: 60%;
+  margin: 0 auto;
+  border-top: 1.5px solid #111;
+  margin-bottom: 4px;
+}
+.receipt-field-pair {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  margin: 0;
+}
+.receipt-name-doc {
+  gap: 32px;
+}
+.receipt-sig-underline {
+  display: inline-block;
+  border-bottom: 1.5px solid #111;
+  min-width: 180px;
+  min-height: 22px;
+  margin-left: 6px;
+  font-size: 15px;
+  color: #111;
+  vertical-align: bottom;
+  padding-bottom: 2px;
+}
+.receipt-name-line {
+  min-width: 220px;
+}
+
+@media (max-width: 820px) {
+  .receipt-preview-toolbar {
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .receipt-paper {
+    width: 100%;
+    height: auto;
+    min-height: 297mm;
+  }
+}
+
+@media print {
+  .receipt-preview-toolbar {
+    display: none !important;
+  }
+  .receipt-paper {
+    box-shadow: none;
+    width: 210mm;
+    height: 297mm;
+    margin: 0;
   }
 }
 

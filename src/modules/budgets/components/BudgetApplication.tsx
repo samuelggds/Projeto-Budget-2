@@ -58,6 +58,7 @@ import { FinancialPanel } from "./FinancialPanel";
 import { MaintenancePlans } from "../../maintenance/components/MaintenancePlans";
 import { useAppRole } from "../../auth/context/appAccessContext";
 import { PasswordInput } from "../../shared/components/PasswordInput";
+import { ReceiptsTab } from "../../receipts/components/ReceiptsTab";
 import type { Supplier } from "../../suppliers/types/Supplier";
 import type { Employee } from "../../employees/types/Employee";
 import type {
@@ -179,6 +180,7 @@ export function BudgetApplication() {
     | "financeiro"
     | "manutencao"
     | "settings"
+    | "recibos"
   >("new");
   const [preview, setPreview] = useState(false);
   const [historyReadOnly, setHistoryReadOnly] = useState(false);
@@ -1501,6 +1503,12 @@ export function BudgetApplication() {
           </button>
           <span className="nav-group-label">Cadastros</span>
           <button
+            className={tab === "recibos" ? "active" : ""}
+            onClick={() => setTab("recibos")}
+          >
+            <i>✎</i>Recibos
+          </button>
+          <button
             className={tab === "clients" ? "active" : ""}
             onClick={() => setTab("clients")}
           >
@@ -1624,7 +1632,9 @@ export function BudgetApplication() {
                                 ? "Financeiro"
                                 : tab === "manutencao"
                                   ? "Planos de Manutenção"
-                                  : "Configurações"}
+                                  : tab === "recibos"
+                                    ? "Recibos"
+                                    : "Configurações"}
             </h1>
             <p>
               {tab === "new"
@@ -1655,7 +1665,9 @@ export function BudgetApplication() {
                                 ? "Acompanhe o faturamento mensal e o total acumulado dos orçamentos."
                                 : tab === "manutencao"
                                   ? "Cadastre equipamentos e visualize as próximas manutenções no calendário."
-                                  : "Personalize os dados exibidos nos orçamentos."}
+                                  : tab === "recibos"
+                                    ? "Emita, salve e baixe recibos em PDF formato A4."
+                                    : "Personalize os dados exibidos nos orçamentos."}
             </p>
           </div>
           {tab === "saved" && (
@@ -3676,6 +3688,8 @@ export function BudgetApplication() {
         {tab === "financeiro" && <FinancialPanel saved={saved} />}
 
         {tab === "manutencao" && <MaintenancePlans />}
+
+        {tab === "recibos" && <ReceiptsTab />}
 
         {tab === "settings" && (
           <section className="settings-layout">
