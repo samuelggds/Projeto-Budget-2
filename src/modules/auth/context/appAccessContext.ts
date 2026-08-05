@@ -1,10 +1,21 @@
 import { createContext, useContext } from "react";
-import type { AppRole } from "../../billing/types/Billing";
+import type { AppRole, AppSubscription } from "../../billing/types/Billing";
 
-export const AppAccessContext = createContext<AppRole | null>(null);
+interface AppAccess {
+  role: AppRole;
+  subscription: AppSubscription;
+}
+
+export const AppAccessContext = createContext<AppAccess | null>(null);
 
 export function useAppRole() {
-  const role = useContext(AppAccessContext);
-  if (!role) throw new Error("Função da conta não carregada");
-  return role;
+  const ctx = useContext(AppAccessContext);
+  if (!ctx) throw new Error("Função da conta não carregada");
+  return ctx.role;
+}
+
+export function useSubscription() {
+  const ctx = useContext(AppAccessContext);
+  if (!ctx) throw new Error("Função da conta não carregada");
+  return ctx.subscription;
 }

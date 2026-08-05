@@ -115,7 +115,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   if (role === "BILLING_ADMIN") return <BillingPanel />;
   return subscriptionAllowsAccess(subscription) ? (
-    <AppAccessProvider role={role}>{children}</AppAccessProvider>
+    <AppAccessProvider role={role} subscription={subscription}>
+      {children}
+    </AppAccessProvider>
   ) : (
     <SubscriptionBlocked subscription={subscription} />
   );

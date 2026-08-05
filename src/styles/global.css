@@ -3069,13 +3069,10 @@ textarea:focus {
   margin-bottom: 20px;
 }
 .grace-period-banner {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  margin: -17px -24px 18px;
+  margin: -17px -24px 20px;
   padding: 0 24px;
   background: #fffbeb;
-  border-bottom: 1px solid #f59e0b55;
+  border-bottom: 2px solid #f59e0b88;
 }
 .grace-period-banner-inner {
   max-width: 1320px;
