@@ -35,6 +35,8 @@ export function ReceiptsTab() {
   const [draft, setDraft] = useState<Receipt>(() => emptyDraft(loadReceipts()));
   const [preview, setPreview] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(5);
   const paperRef = useRef<HTMLDivElement>(null);
 
   const update = (field: keyof Receipt, value: string | number) =>
@@ -303,34 +305,87 @@ export function ReceiptsTab() {
 
       {/* ── LIST ─────────────────────────────────── */}
       <div className="card registry-list">
-        <h2>Recibos emitidos</h2>
-        {receipts.length === 0 ? (
-          <p className="registry-empty">Nenhum recibo emitido.</p>
-        ) : (
-          receipts
+        <div className="registry-title">
+          <h2>Recibos emitidos</h2>
+        </div>
+        <label style={{ display: "block", marginBottom: 12 }}>
+          <input
+            placeholder="Pesquisar por Nº do recibo..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setVisibleCount(5);
+            }}
+            style={{ width: "100%" }}
+          />
+        </label>
+        {(() => {
+          const filtered = receipts
             .slice()
             .reverse()
-            .map((r) => (
-              <div className="registry-row" key={r.id}>
-                <div>
-                  <strong>Recibo Nº {r.number}</strong>
-                  <small>
-                    {r.receivedFrom || "—"} · {formatMoney(r.amount)}
-                    {r.referringTo ? ` · ${r.referringTo}` : ""}
-                  </small>
+            .filter(
+              (r) =>
+                !search.trim() ||
+                r.number.toLowerCase().includes(search.trim().toLowerCase()),
+            );
+          const visible = filtered.slice(0, visibleCount);
+          if (receipts.length === 0)
+            return <p className="registry-empty">Nenhum recibo emitido.</p>;
+          if (filtered.length === 0)
+            return (
+              <p className="registry-empty">
+                Nenhum recibo encontrado para "{search}".
+              </p>
+            );
+          return (
+            <>
+              {visible.map((r) => (
+                <div className="registry-row" key={r.id}>
+                  <div>
+                    <strong>Recibo Nº {r.number}</strong>
+                    <small>
+                      {r.receivedFrom || "—"} · {formatMoney(r.amount)}
+                      {r.referringTo ? ` · ${r.referringTo}` : ""}
+                    </small>
+                  </div>
+                  <div className="receipt-list-actions">
+                    <button onClick={() => editReceipt(r)}>Editar</button>
+                    <button
+                      className="delete-service"
+                      onClick={() => deleteReceipt(r.id)}
+                    >
+                      Excluir
+                    </button>
+                  </div>
                 </div>
-                <div className="receipt-list-actions">
-                  <button onClick={() => editReceipt(r)}>Editar</button>
-                  <button
-                    className="delete-service"
-                    onClick={() => deleteReceipt(r.id)}
-                  >
-                    Excluir
-                  </button>
+              ))}
+              {filtered.length > 5 && (
+                <div className="load-controls">
+                  <span>
+                    Exibindo {Math.min(visibleCount, filtered.length)} de{" "}
+                    {filtered.length}
+                  </span>
+                  {visibleCount > 5 && (
+                    <button
+                      className="button ghost"
+                      onClick={() => setVisibleCount(5)}
+                    >
+                      ← Voltar ao início
+                    </button>
+                  )}
+                  {visibleCount < filtered.length && (
+                    <button
+                      className="button primary"
+                      onClick={() => setVisibleCount((c) => c + 5)}
+                    >
+                      Carregar mais 5
+                    </button>
+                  )}
                 </div>
-              </div>
-            ))
-        )}
+              )}
+            </>
+          );
+        })()}
       </div>
     </div>
   );
