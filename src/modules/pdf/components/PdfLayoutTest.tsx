@@ -5,9 +5,16 @@ import { createBudgetPdf } from "../services/budgetPdf";
 const COUNTS = [5, 10, 15, 20, 25, 30, 35, 40];
 
 function makeItems(count: number) {
+  const types = [
+    "RELE AUX 12V",
+    "CAPACITOR 40MF",
+    "GAS R410A",
+    "FILTRO SECADOR",
+    "SENSOR TEMP",
+  ];
   return Array.from({ length: count }, (_, i) => ({
     id: String(i),
-    description: `Serviço de manutenção preventiva no equipamento ${i + 1}`,
+    description: types[i % types.length],
     quantity: 1,
     unit: "un.",
     unitPrice: 50 + i * 10,
@@ -26,7 +33,7 @@ function PaperPreview({
   const ref = useRef<HTMLElement>(null);
   const items = makeItems(count);
   const total = items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
-  const paperClass = `paper ${count > 19 ? "paper-max" : count > 12 ? "paper-ultra" : count > 7 ? "paper-dense" : ""}`;
+  const paperClass = `paper ${count > 12 ? "paper-ultra" : count > 7 ? "paper-dense" : ""}`;
 
   useEffect(() => {
     if (!ref.current) return;
@@ -56,13 +63,11 @@ function PaperPreview({
       >
         <span>
           {count} itens — classe:{" "}
-          {count > 19
-            ? "paper-max"
-            : count > 12
-              ? "paper-ultra"
-              : count > 7
-                ? "paper-dense"
-                : "paper (normal)"}
+          {count > 12
+            ? "paper-ultra"
+            : count > 7
+              ? "paper-dense"
+              : "paper (normal)"}
         </span>
         <button
           onClick={handleDownload}
@@ -291,13 +296,11 @@ export function PdfLayoutTest() {
               >
                 <td style={{ padding: "5px 14px" }}>{count}</td>
                 <td style={{ padding: "5px 14px", fontFamily: "monospace" }}>
-                  {count > 19
-                    ? "paper-max"
-                    : count > 12
-                      ? "paper-ultra"
-                      : count > 7
-                        ? "paper-dense"
-                        : "paper"}
+                  {count > 12
+                    ? "paper-ultra"
+                    : count > 7
+                      ? "paper-dense"
+                      : "paper"}
                 </td>
                 <td style={{ padding: "5px 14px" }}>{m?.height ?? "…"}</td>
                 <td style={{ padding: "5px 14px" }}>{m?.a4 ?? "…"}</td>

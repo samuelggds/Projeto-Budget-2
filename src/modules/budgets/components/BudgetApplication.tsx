@@ -2110,7 +2110,7 @@ export function BudgetApplication() {
           <div className="preview-area">
             <article
               id="budget-pdf"
-              className={`paper ${budget.items.length > 19 ? "paper-max" : budget.items.length > 12 ? "paper-ultra" : budget.items.length > 7 ? "paper-dense" : ""}`}
+              className={`paper ${budget.items.length > 12 ? "paper-ultra" : budget.items.length > 7 ? "paper-dense" : ""}`}
             >
               {appSettings.pdfBackgroundUrl && (
                 <div
