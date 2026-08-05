@@ -1300,6 +1300,13 @@ export function BudgetApplication() {
     setPreview(isEmployee);
   };
 
+  const editBudgetFromHistory = (item: Budget) => {
+    setBudget(withDefaultItemUnit(item));
+    setTab("new");
+    setHistoryReadOnly(false);
+    setPreview(false);
+  };
+
   const removeBudget = async (item: Budget) => {
     if (
       !window.confirm(
@@ -2448,6 +2455,11 @@ export function BudgetApplication() {
                     <button onClick={() => openBudget(item)}>
                       {isEmployee ? "Visualizar" : "Abrir"}
                     </button>
+                    {isEmployee && (
+                      <button onClick={() => editBudgetFromHistory(item)}>
+                        Editar
+                      </button>
+                    )}
                     {!isEmployee && item.status === "Aprovado" && (
                       <button
                         className="cancel-action"
