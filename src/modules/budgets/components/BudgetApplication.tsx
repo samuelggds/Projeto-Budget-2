@@ -53,6 +53,7 @@ import {
 } from "../../settings/types/AppSettings";
 import type { Part } from "../../stock/types/Part";
 import { BillingOverview } from "../../billing/components/BillingOverview";
+import { GracePeriodBanner } from "../../billing/components/GracePeriodBanner";
 import { FinancialPanel } from "./FinancialPanel";
 import { MaintenancePlans } from "../../maintenance/components/MaintenancePlans";
 import { useAppRole } from "../../auth/context/appAccessContext";
@@ -1592,6 +1593,10 @@ export function BudgetApplication() {
       </aside>
 
       <main className="workspace">
+        <GracePeriodBanner
+          showPayButton={!isEmployee}
+          onPayClick={() => setTab("billing")}
+        />
         <header className="topbar">
           <div>
             <p className="eyebrow">PAINEL DE ORÇAMENTOS</p>
