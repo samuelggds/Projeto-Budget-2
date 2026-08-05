@@ -201,6 +201,7 @@ export function BudgetApplication() {
     text: string;
     type: "success" | "error";
   } | null>(null);
+  const [today, setToday] = useState(() => new Date().toDateString());
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [databaseLoading, setDatabaseLoading] = useState(true);
@@ -243,6 +244,8 @@ export function BudgetApplication() {
   });
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeHistorySearch, setEmployeeHistorySearch] = useState("");
+  const [employeeHistoryCount, setEmployeeHistoryCount] = useState(5);
   const [employeeDraft, setEmployeeDraft] = useState<Employee>({
     id: "",
     name: "",
@@ -334,7 +337,7 @@ export function BudgetApplication() {
         (item) =>
           item.nextPaymentDate && daysUntilPayment(item.nextPaymentDate) <= 3,
       ),
-    [suppliers],
+    [suppliers, today],
   );
   const employeePaymentAlerts = useMemo(
     () =>
@@ -342,8 +345,52 @@ export function BudgetApplication() {
         (item) =>
           item.nextPaymentDate && daysUntilPayment(item.nextPaymentDate) <= 3,
       ),
-    [employees],
+    [employees, today],
   );
+  const overdueEmployees = useMemo(
+    () =>
+      employeePaymentAlerts.filter(
+        (e) => daysUntilPayment(e.nextPaymentDate) < 0,
+      ),
+    [employeePaymentAlerts],
+  );
+  const dueSoonEmployees = useMemo(
+    () =>
+      employeePaymentAlerts.filter(
+        (e) => daysUntilPayment(e.nextPaymentDate) >= 0,
+      ),
+    [employeePaymentAlerts],
+  );
+  const filteredEmployeeHistory = useMemo(() => {
+    const q = employeeHistorySearch.trim().toLocaleLowerCase("pt-BR");
+    return paymentHistory.filter(
+      (item) =>
+        item.payeeType === "EMPLOYEE" &&
+        (!q || item.payeeName.toLocaleLowerCase("pt-BR").includes(q)),
+    );
+  }, [paymentHistory, employeeHistorySearch]);
+
+  // Atualiza os alertas de pagamento quando o dia vira à meia-noite
+  useEffect(() => {
+    let id: ReturnType<typeof setTimeout>;
+    function schedule() {
+      const now = new Date();
+      const msUntilMidnight =
+        new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate() + 1,
+        ).getTime() -
+        now.getTime() +
+        1000;
+      id = setTimeout(() => {
+        setToday(new Date().toDateString());
+        schedule();
+      }, msUntilMidnight);
+    }
+    schedule();
+    return () => clearTimeout(id);
+  }, []);
 
   useEffect(() => {
     loadDatabase()
@@ -3378,30 +3425,89 @@ export function BudgetApplication() {
 
         {tab === "employees" && !isEmployee && (
           <section className="registry-layout supplier-layout">
-            {employeePaymentAlerts.length > 0 && (
+            {overdueEmployees.length > 0 && (
+              <div className="payment-alerts payment-alerts-overdue full-registry-width">
+                <div className="payment-alert-title">
+                  <div>
+                    <strong>⚠ Pagamentos em atraso</strong>
+                    <span>
+                      Funcionários que não receberam no prazo — ciclo quinzenal
+                    </span>
+                  </div>
+                  <em>{overdueEmployees.length}</em>
+                </div>
+                {overdueEmployees.map((employee) => {
+                  const days = daysUntilPayment(employee.nextPaymentDate);
+                  return (
+                    <div
+                      className="payment-alert-row overdue"
+                      key={employee.id}
+                    >
+                      <div>
+                        <strong>{employee.name}</strong>
+                        <span>{Math.abs(days)} dia(s) em atraso</span>
+                      </div>
+                      <div>
+                        <span>Valor</span>
+                        <strong>{money(employee.paymentAmount)}</strong>
+                      </div>
+                      <div>
+                        <span>Venceu em</span>
+                        <strong>
+                          {new Date(
+                            `${employee.nextPaymentDate}T12:00:00`,
+                          ).toLocaleDateString("pt-BR")}
+                        </strong>
+                      </div>
+                      <div className="payment-pix">
+                        <span>Chave Pix</span>
+                        <strong title={employee.pixKey}>
+                          {employee.pixKey}
+                        </strong>
+                      </div>
+                      <div className="payment-alert-actions">
+                        <button
+                          className="button ghost"
+                          onClick={() => void copyPixKey(employee.pixKey)}
+                        >
+                          Copiar Pix
+                        </button>
+                        <button
+                          className="button danger"
+                          onClick={() =>
+                            void confirmPayeePayment("EMPLOYEE", employee.id)
+                          }
+                        >
+                          Marcar como pago
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {dueSoonEmployees.length > 0 && (
               <div className="payment-alerts full-registry-width">
                 <div className="payment-alert-title">
                   <div>
                     <strong>Pagamentos de funcionários</strong>
-                    <span>Vencendo nos próximos 3 dias ou atrasados</span>
+                    <span>Vencendo nos próximos 3 dias</span>
                   </div>
-                  <em>{employeePaymentAlerts.length}</em>
+                  <em>{dueSoonEmployees.length}</em>
                 </div>
-                {employeePaymentAlerts.map((employee) => {
+                {dueSoonEmployees.map((employee) => {
                   const days = daysUntilPayment(employee.nextPaymentDate);
                   return (
                     <div
-                      className={`payment-alert-row ${days < 0 ? "overdue" : "due-soon"}`}
+                      className="payment-alert-row due-soon"
                       key={employee.id}
                     >
                       <div>
                         <strong>{employee.name}</strong>
                         <span>
-                          {days < 0
-                            ? `${Math.abs(days)} dia(s) em atraso`
-                            : days === 0
-                              ? "Vence hoje"
-                              : `Vence em ${days} dia(s)`}
+                          {days === 0
+                            ? "Vence hoje"
+                            : `Vence em ${days} dia(s)`}
                         </span>
                       </div>
                       <div>
@@ -3618,41 +3724,65 @@ export function BudgetApplication() {
                   <span>Próximo vencimento</span>
                   <span>Ações</span>
                 </div>
-                {filteredEmployees.map((employee) => (
-                  <div className="supplier-row" key={employee.id}>
-                    <strong>{employee.name}</strong>
-                    <span>{employee.document || "—"}</span>
-                    <span>{employee.phone || "—"}</span>
-                    <span>{employee.paymentMethod || "—"}</span>
-                    <span className="supplier-pix" title={employee.pixKey}>
-                      {employee.pixKey || "—"}
-                    </span>
-                    <span>{money(employee.paymentAmount)}</span>
-                    <span>
-                      {employee.nextPaymentDate
-                        ? new Date(
-                            `${employee.nextPaymentDate}T12:00:00`,
-                          ).toLocaleDateString("pt-BR")
-                        : "—"}
-                    </span>
-                    <div className="supplier-actions">
-                      <button
-                        onClick={() => {
-                          setEmployeeDraft(employee);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        className="delete-service"
-                        onClick={() => void removeEmployee(employee)}
-                      >
-                        Excluir
-                      </button>
+                {filteredEmployees.map((employee) => {
+                  const overdueDays = employee.nextPaymentDate
+                    ? daysUntilPayment(employee.nextPaymentDate)
+                    : null;
+                  const isOverdue = overdueDays !== null && overdueDays < 0;
+                  return (
+                    <div
+                      className={`supplier-row${isOverdue ? " row-overdue" : ""}`}
+                      key={employee.id}
+                    >
+                      <strong>{employee.name}</strong>
+                      <span>{employee.document || "—"}</span>
+                      <span>{employee.phone || "—"}</span>
+                      <span>{employee.paymentMethod || "—"}</span>
+                      <span className="supplier-pix" title={employee.pixKey}>
+                        {employee.pixKey || "—"}
+                      </span>
+                      <span>{money(employee.paymentAmount)}</span>
+                      <span>
+                        {employee.nextPaymentDate
+                          ? new Date(
+                              `${employee.nextPaymentDate}T12:00:00`,
+                            ).toLocaleDateString("pt-BR")
+                          : "—"}
+                        {isOverdue && (
+                          <span className="employee-overdue-tag">
+                            {Math.abs(overdueDays!)} dias em atraso
+                          </span>
+                        )}
+                      </span>
+                      <div className="supplier-actions">
+                        {isOverdue && (
+                          <button
+                            className="button danger"
+                            onClick={() =>
+                              void confirmPayeePayment("EMPLOYEE", employee.id)
+                            }
+                          >
+                            Pagar
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setEmployeeDraft(employee);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          className="delete-service"
+                          onClick={() => void removeEmployee(employee)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {!filteredEmployees.length && (
                   <div className="empty-history">
                     <strong>Nenhum funcionário encontrado</strong>
@@ -3666,11 +3796,26 @@ export function BudgetApplication() {
               </div>
               <div className="payment-history-block">
                 <h3>Histórico de pagamentos</h3>
-                {paymentHistory
-                  .filter((item) => item.payeeType === "EMPLOYEE")
-                  .slice(0, 10)
+                <label className="supplier-search">
+                  Filtrar por funcionário
+                  <input
+                    type="search"
+                    placeholder="Pesquise pelo nome"
+                    value={employeeHistorySearch}
+                    onChange={(e) => {
+                      setEmployeeHistorySearch(e.target.value);
+                      setEmployeeHistoryCount(5);
+                    }}
+                  />
+                </label>
+                {filteredEmployeeHistory
+                  .slice(0, employeeHistoryCount)
                   .map((item) => (
-                    <div className="payment-history-row" key={item.id}>
+                    <div
+                      className="payment-history-row payment-history-paid"
+                      key={item.id}
+                    >
+                      <span className="history-paid-badge">✓ Pago</span>
                       <strong>{item.payeeName}</strong>
                       <span>{money(item.amount)}</span>
                       <span>
@@ -3684,10 +3829,16 @@ export function BudgetApplication() {
                       </span>
                     </div>
                   ))}
-                {!paymentHistory.some(
-                  (item) => item.payeeType === "EMPLOYEE",
-                ) && (
+                {filteredEmployeeHistory.length === 0 && (
                   <p className="registry-empty">Nenhum pagamento confirmado.</p>
+                )}
+                {employeeHistoryCount < filteredEmployeeHistory.length && (
+                  <button
+                    className="button soft history-load-more"
+                    onClick={() => setEmployeeHistoryCount((n) => n + 5)}
+                  >
+                    + 5 mais
+                  </button>
                 )}
               </div>
             </div>
