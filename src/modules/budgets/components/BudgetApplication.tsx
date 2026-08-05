@@ -161,8 +161,15 @@ function validatePaymentRegistration(data: PaymentRegistration, label: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.paymentDate))
     return "Informe a data de pagamento";
   if (!Number.isFinite(data.paymentAmount) || data.paymentAmount <= 0)
-    return "Informe um valor mensal maior que zero";
+    return "Informe um valor maior que zero";
   return "";
+}
+
+/** Returns today + 15 days as YYYY-MM-DD — default for new employee payment date. */
+function nextBiweeklyDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 15);
+  return d.toISOString().slice(0, 10);
 }
 
 export function BudgetApplication() {
@@ -243,7 +250,7 @@ export function BudgetApplication() {
     phone: "",
     paymentMethod: "PIX",
     pixKey: "",
-    paymentDate: "",
+    paymentDate: nextBiweeklyDate(),
     paymentAmount: 0,
     nextPaymentDate: "",
   });
@@ -661,7 +668,7 @@ export function BudgetApplication() {
       phone: "",
       paymentMethod: "PIX",
       pixKey: "",
-      paymentDate: "",
+      paymentDate: nextBiweeklyDate(),
       paymentAmount: 0,
       nextPaymentDate: "",
     });
@@ -3530,7 +3537,7 @@ export function BudgetApplication() {
                   />
                 </label>
                 <label>
-                  Data de pagamento
+                  Primeiro pagamento
                   <input
                     type="date"
                     value={employeeDraft.paymentDate}
@@ -3543,7 +3550,7 @@ export function BudgetApplication() {
                   />
                 </label>
                 <label>
-                  Valor mensal
+                  Valor quinzenal
                   <input
                     type="number"
                     min="0.01"
