@@ -45,6 +45,7 @@ import {
   saveEmployeeToDatabase,
   markPayeePaymentAsPaid,
   saveSupplierToDatabase,
+  deletePaymentHistoryEntry,
 } from "../../shared/services/supabaseDatabase";
 import { SmoothSelect } from "../../shared/components/SmoothSelect";
 import {
@@ -774,6 +775,17 @@ export function BudgetApplication() {
         `Erro ao excluir funcionário: ${(error as Error).message}`,
         "error",
       );
+    }
+  };
+
+  const deleteEmployeeHistoryEntry = async (id: string) => {
+    if (!window.confirm("Excluir este registro do histórico?")) return;
+    try {
+      await deletePaymentHistoryEntry(id);
+      setPaymentHistory((current) => current.filter((item) => item.id !== id));
+      notify("Registro excluído do histórico");
+    } catch (error) {
+      notify(`Erro ao excluir: ${(error as Error).message}`, "error");
     }
   };
 
@@ -3829,6 +3841,13 @@ export function BudgetApplication() {
                       <span>
                         Pago em: {new Date(item.paidAt).toLocaleString("pt-BR")}
                       </span>
+                      <button
+                        className="button ghost history-delete-btn"
+                        onClick={() => void deleteEmployeeHistoryEntry(item.id)}
+                        title="Excluir registro"
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                 {filteredEmployeeHistory.length === 0 && (

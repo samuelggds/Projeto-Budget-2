@@ -386,6 +386,14 @@ export async function markPayeePaymentAsPaid(
   assertNoError(error);
 }
 
+export async function deletePaymentHistoryEntry(id: string) {
+  const { error } = await supabase
+    .from("payee_payment_history")
+    .delete()
+    .eq("id", id);
+  assertNoError(error);
+}
+
 export async function loadPartsFromDatabase() {
   const { data, error } = await supabase
     .from("parts")

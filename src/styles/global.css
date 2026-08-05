@@ -3720,7 +3720,7 @@ textarea:focus {
 }
 .payment-history-row {
   display: grid;
-  grid-template-columns: auto 1.2fr 0.7fr 1fr 1.2fr;
+  grid-template-columns: auto 1.2fr 0.7fr 1fr 1.2fr auto;
   gap: 12px;
   align-items: center;
   padding: 11px 12px;
@@ -3748,6 +3748,16 @@ textarea:focus {
   width: 100%;
   margin-top: 10px;
   justify-content: center;
+}
+.history-delete-btn {
+  padding: 3px 7px;
+  font-size: 11px;
+  color: #b42318;
+  border-color: #fecdc9;
+  line-height: 1;
+}
+.history-delete-btn:hover {
+  background: #fff1f0;
 }
 .payment-history-row + .payment-history-row {
   margin-top: 7px;
