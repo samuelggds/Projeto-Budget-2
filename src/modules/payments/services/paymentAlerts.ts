@@ -1,7 +1,7 @@
 export const ALERT_THRESHOLD_DAYS = 3;
 
-export function daysUntilPayment(date: string): number {
-  const today = new Date();
+export function daysUntilPayment(date: string, ref?: Date): number {
+  const today = ref ? new Date(ref) : new Date();
   today.setHours(0, 0, 0, 0);
   const due = new Date(`${date}T00:00:00`);
   return Math.ceil((due.getTime() - today.getTime()) / 86_400_000);

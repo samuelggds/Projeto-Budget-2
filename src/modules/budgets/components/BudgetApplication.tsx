@@ -201,7 +201,9 @@ export function BudgetApplication() {
     text: string;
     type: "success" | "error";
   } | null>(null);
-  const [today, setToday] = useState(() => new Date().toDateString());
+  const [today, setToday] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [databaseLoading, setDatabaseLoading] = useState(true);
@@ -331,22 +333,22 @@ export function BudgetApplication() {
       ].some((value) => value.toLocaleLowerCase("pt-BR").includes(query)),
     );
   }, [employeeSearch, employees]);
-  const supplierPaymentAlerts = useMemo(
-    () =>
-      suppliers.filter(
-        (item) =>
-          item.nextPaymentDate && daysUntilPayment(item.nextPaymentDate) <= 3,
-      ),
-    [suppliers, today],
-  );
-  const employeePaymentAlerts = useMemo(
-    () =>
-      employees.filter(
-        (item) =>
-          item.nextPaymentDate && daysUntilPayment(item.nextPaymentDate) <= 3,
-      ),
-    [employees, today],
-  );
+  const supplierPaymentAlerts = useMemo(() => {
+    const ref = new Date(`${today}T00:00:00`);
+    return suppliers.filter(
+      (item) =>
+        item.nextPaymentDate &&
+        daysUntilPayment(item.nextPaymentDate, ref) <= 3,
+    );
+  }, [suppliers, today]);
+  const employeePaymentAlerts = useMemo(() => {
+    const ref = new Date(`${today}T00:00:00`);
+    return employees.filter(
+      (item) =>
+        item.nextPaymentDate &&
+        daysUntilPayment(item.nextPaymentDate, ref) <= 3,
+    );
+  }, [employees, today]);
   const overdueEmployees = useMemo(
     () =>
       employeePaymentAlerts.filter(
@@ -384,7 +386,7 @@ export function BudgetApplication() {
         now.getTime() +
         1000;
       id = setTimeout(() => {
-        setToday(new Date().toDateString());
+        setToday(new Date().toISOString().slice(0, 10));
         schedule();
       }, msUntilMidnight);
     }
