@@ -254,6 +254,105 @@ nav button.active {
   margin-top: 20px;
   font-size: 10px;
 }
+.login-forgot-btn {
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  width: 100%;
+  padding: 4px 0 0;
+  cursor: pointer;
+}
+.login-forgot-btn:hover {
+  text-decoration: underline;
+}
+.login-back-btn {
+  display: block;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 18px;
+  cursor: pointer;
+  padding: 0;
+}
+.login-back-btn:hover {
+  color: var(--ink);
+}
+.login-recovery-sent {
+  padding: 16px;
+  border-radius: 10px;
+  background: #e8f7ee;
+  border: 1px solid #86efac;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.login-recovery-sent strong {
+  display: block;
+  color: #14532d;
+  font-size: 14px;
+}
+.login-recovery-sent span {
+  color: #166534;
+  font-size: 12px;
+  line-height: 1.5;
+}
+/* Reset password page styles */
+.reset-password-card {
+  max-width: 460px;
+}
+.reset-password-form {
+  display: grid;
+  gap: 15px;
+}
+.reset-password-form .button {
+  width: 100%;
+  margin-top: 3px;
+  padding: 13px;
+}
+.password-requirements {
+  list-style: none;
+  padding: 12px 14px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f7f8fb;
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.password-requirements li::before {
+  content: "○ ";
+  font-size: 10px;
+}
+.password-requirements li.valid {
+  color: var(--green);
+  font-weight: 700;
+}
+.password-requirements li.valid::before {
+  content: "✓ ";
+}
+.password-requirements li.invalid {
+  color: var(--red);
+}
+.password-requirements li.invalid::before {
+  content: "✗ ";
+}
+.password-confirmation {
+  font-size: 12px;
+  font-weight: 700;
+}
+.password-confirmation.valid {
+  color: var(--green);
+}
+.password-confirmation.invalid {
+  color: var(--red);
+}
 .login-error,
 .login-warning {
   padding: 11px 12px;

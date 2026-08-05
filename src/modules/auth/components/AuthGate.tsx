@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { isAuthConfigured, supabase } from "../services/supabase";
 import { LoginPage } from "./LoginPage";
+import { ResetPasswordPage } from "./ResetPasswordPage";
 import {
   BillingPanel,
   SubscriptionBlocked,
@@ -22,6 +23,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     null,
   );
   const [accessError, setAccessError] = useState("");
+  const [isRecovering, setIsRecovering] = useState(false);
 
   useEffect(() => {
     const acceptUser = async (candidate: User | null) => {
@@ -50,7 +52,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
       return;
     }
     supabase.auth.getUser().then(({ data }) => acceptUser(data.user));
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsRecovering(true);
+        return;
+      }
       void acceptUser(session?.user ?? null);
     });
     return () => data.subscription.unsubscribe();
@@ -96,6 +102,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <span>Verificando acesso...</span>
       </div>
     );
+  if (isRecovering)
+    return <ResetPasswordPage onComplete={() => setIsRecovering(false)} />;
   if (!user) return <LoginPage />;
   if (accessError || !role || !subscription)
     return (

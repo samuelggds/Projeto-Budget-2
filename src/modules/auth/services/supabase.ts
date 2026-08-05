@@ -17,6 +17,16 @@ export const supabase = createClient(
   },
 );
 
+export async function resetPasswordForEmail(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    email.trim().toLowerCase(),
+    {
+      redirectTo: `${window.location.origin}/`,
+    },
+  );
+  if (error) throw new Error(error.message);
+}
+
 export async function updateRecoveredPassword(password: string) {
   const { data, error } = await supabase.auth.updateUser({ password });
   if (error) throw new Error(error.message);
