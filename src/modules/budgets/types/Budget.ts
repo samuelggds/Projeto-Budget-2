@@ -42,7 +42,6 @@ export type Budget = {
   createdAt: string;
   updatedAt: string;
   pdfSavedAt?: string;
-  pdfUrl?: string;
   createdBy?: string;
   stockDeductedAt?: string;
   discountLabel?: string;

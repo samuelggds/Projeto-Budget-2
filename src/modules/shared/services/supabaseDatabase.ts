@@ -201,8 +201,6 @@ export async function loadDatabase() {
       notes: text(row.notes),
       updatedAt: text(row.updated_at),
       createdAt: text(row.created_at),
-      pdfSavedAt: row.pdf_url ? text(row.updated_at) : undefined,
-      pdfUrl: row.pdf_url ? text(row.pdf_url) : undefined,
       createdBy: row.created_by ? text(row.created_by) : undefined,
       stockDeductedAt: row.stock_deducted_at
         ? text(row.stock_deducted_at)
@@ -487,7 +485,6 @@ export async function saveBudgetToDatabase(budget: Budget) {
     status: toDatabaseStatus[budget.status],
     payment: budget.payment || null,
     notes: budget.notes || null,
-    pdf_url: budget.pdfUrl || null,
     discount_label: budget.discountLabel || null,
     discount_amount: budget.discountAmount ?? null,
     created_at: createdAt,

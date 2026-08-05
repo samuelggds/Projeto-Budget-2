@@ -1308,7 +1308,7 @@ export function BudgetApplication() {
       await deleteBudgetFromDatabase(item.id);
       const next = saved.filter((savedItem) => savedItem.id !== item.id);
       setSaved(next);
-      await deletePdf(item.id, item.pdfUrl);
+      await deletePdf(item.id);
       notify("Orçamento e PDF excluídos");
     } catch (error) {
       notify(`Erro: ${(error as Error).message}`);
@@ -1379,20 +1379,13 @@ export function BudgetApplication() {
       await pdf.download();
 
       try {
-        const pdfUrl = await savePdf(persisted.id, pdf.blob);
+        await savePdf(persisted.id, pdf.blob);
         const updated = {
           ...withDefaultItemUnit(persisted),
-          pdfUrl,
           pdfSavedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
         };
-        const next = [
-          updated,
-          ...saved.filter((item) => item.id !== updated.id),
-        ];
         setBudget(updated);
-        setSaved(next);
-        await saveBudgetToDatabase(updated);
+        setSaved([updated, ...saved.filter((item) => item.id !== updated.id)]);
         notify("Orçamento salvo e PDF baixado");
       } catch (storageError) {
         setSaved([
@@ -1400,7 +1393,7 @@ export function BudgetApplication() {
           ...saved.filter((item) => item.id !== persisted.id),
         ]);
         notify(
-          `PDF baixado, mas não foi possível armazená-lo online: ${(storageError as Error).message}`,
+          `PDF gerado e baixado, mas não foi possível salvar no cache local: ${(storageError as Error).message}`,
           "error",
         );
       }
@@ -1413,7 +1406,7 @@ export function BudgetApplication() {
   };
 
   const downloadStoredPdf = async (item: Budget) => {
-    const blob = await getPdf(item.id, item.pdfUrl);
+    const blob = await getPdf(item.id);
     if (!blob) {
       notify("PDF não encontrado. Abra o orçamento e gere novamente.");
       return;
@@ -1423,7 +1416,7 @@ export function BudgetApplication() {
 
   const downloadReadOnlyPdf = async () => {
     try {
-      const storedBlob = await getPdf(budget.id, budget.pdfUrl);
+      const storedBlob = await getPdf(budget.id);
       if (storedBlob) {
         downloadPdfBlob(storedBlob, `${budget.number}.pdf`);
         notify("PDF baixado");
