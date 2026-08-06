@@ -4252,7 +4252,8 @@ export function BudgetApplication() {
                   </label>
                   <label>
                     Senha atual para confirmar
-                    <PasswordInput
+                    <input
+                      type="password"
                       autoComplete="current-password"
                       value={emailPassword}
                       onChange={(event) => setEmailPassword(event.target.value)}
