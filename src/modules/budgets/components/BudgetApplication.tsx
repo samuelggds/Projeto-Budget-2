@@ -234,6 +234,8 @@ export function BudgetApplication() {
   const [parts, setParts] = useState<Part[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierSearch, setSupplierSearch] = useState("");
+  const [supplierHistorySearch, setSupplierHistorySearch] = useState("");
+  const [supplierHistoryCount, setSupplierHistoryCount] = useState(5);
   const [supplierDraft, setSupplierDraft] = useState<Supplier>({
     id: "",
     name: "",
@@ -342,6 +344,28 @@ export function BudgetApplication() {
         daysUntilPayment(item.nextPaymentDate, ref) <= 3,
     );
   }, [suppliers, today]);
+  const overdueSuppliers = useMemo(
+    () =>
+      supplierPaymentAlerts.filter(
+        (s) => daysUntilPayment(s.nextPaymentDate) < 0,
+      ),
+    [supplierPaymentAlerts],
+  );
+  const dueSoonSuppliers = useMemo(
+    () =>
+      supplierPaymentAlerts.filter(
+        (s) => daysUntilPayment(s.nextPaymentDate) >= 0,
+      ),
+    [supplierPaymentAlerts],
+  );
+  const filteredSupplierHistory = useMemo(() => {
+    const q = supplierHistorySearch.trim().toLocaleLowerCase("pt-BR");
+    return paymentHistory.filter(
+      (item) =>
+        item.payeeType === "SUPPLIER" &&
+        (!q || item.payeeName.toLocaleLowerCase("pt-BR").includes(q)),
+    );
+  }, [paymentHistory, supplierHistorySearch]);
   const employeePaymentAlerts = useMemo(() => {
     const ref = new Date(`${today}T00:00:00`);
     return employees.filter(
@@ -3120,30 +3144,89 @@ export function BudgetApplication() {
 
         {tab === "suppliers" && !isEmployee && (
           <section className="registry-layout supplier-layout">
-            {supplierPaymentAlerts.length > 0 && (
+            {overdueSuppliers.length > 0 && (
+              <div className="payment-alerts payment-alerts-overdue full-registry-width">
+                <div className="payment-alert-title">
+                  <div>
+                    <strong>⚠ Pagamentos em atraso</strong>
+                    <span>
+                      Fornecedores com pagamento fora do prazo — ciclo mensal
+                    </span>
+                  </div>
+                  <em>{overdueSuppliers.length}</em>
+                </div>
+                {overdueSuppliers.map((supplier) => {
+                  const days = daysUntilPayment(supplier.nextPaymentDate);
+                  return (
+                    <div
+                      className="payment-alert-row overdue"
+                      key={supplier.id}
+                    >
+                      <div>
+                        <strong>{supplier.name}</strong>
+                        <span>{Math.abs(days)} dia(s) em atraso</span>
+                      </div>
+                      <div>
+                        <span>Valor</span>
+                        <strong>{money(supplier.paymentAmount)}</strong>
+                      </div>
+                      <div>
+                        <span>Venceu em</span>
+                        <strong>
+                          {new Date(
+                            `${supplier.nextPaymentDate}T12:00:00`,
+                          ).toLocaleDateString("pt-BR")}
+                        </strong>
+                      </div>
+                      <div className="payment-pix">
+                        <span>Chave Pix</span>
+                        <strong title={supplier.pixKey}>
+                          {supplier.pixKey}
+                        </strong>
+                      </div>
+                      <div className="payment-alert-actions">
+                        <button
+                          className="button ghost"
+                          onClick={() => void copyPixKey(supplier.pixKey)}
+                        >
+                          Copiar Pix
+                        </button>
+                        <button
+                          className="button danger"
+                          onClick={() =>
+                            void confirmPayeePayment("SUPPLIER", supplier.id)
+                          }
+                        >
+                          Marcar como pago
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {dueSoonSuppliers.length > 0 && (
               <div className="payment-alerts full-registry-width">
                 <div className="payment-alert-title">
                   <div>
                     <strong>Pagamentos de fornecedores</strong>
-                    <span>Vencendo nos próximos 3 dias ou atrasados</span>
+                    <span>Vencendo nos próximos 3 dias</span>
                   </div>
-                  <em>{supplierPaymentAlerts.length}</em>
+                  <em>{dueSoonSuppliers.length}</em>
                 </div>
-                {supplierPaymentAlerts.map((supplier) => {
+                {dueSoonSuppliers.map((supplier) => {
                   const days = daysUntilPayment(supplier.nextPaymentDate);
                   return (
                     <div
-                      className={`payment-alert-row ${days < 0 ? "overdue" : "due-soon"}`}
+                      className="payment-alert-row due-soon"
                       key={supplier.id}
                     >
                       <div>
                         <strong>{supplier.name}</strong>
                         <span>
-                          {days < 0
-                            ? `${Math.abs(days)} dia(s) em atraso`
-                            : days === 0
-                              ? "Vence hoje"
-                              : `Vence em ${days} dia(s)`}
+                          {days === 0
+                            ? "Vence hoje"
+                            : `Vence em ${days} dia(s)`}
                         </span>
                       </div>
                       <div>
@@ -3361,41 +3444,65 @@ export function BudgetApplication() {
                   <span>Próximo vencimento</span>
                   <span>Ações</span>
                 </div>
-                {filteredSuppliers.map((supplier) => (
-                  <div className="supplier-row" key={supplier.id}>
-                    <strong>{supplier.name}</strong>
-                    <span>{supplier.document || "—"}</span>
-                    <span>{supplier.phone || "—"}</span>
-                    <span>{supplier.paymentMethod || "—"}</span>
-                    <span className="supplier-pix" title={supplier.pixKey}>
-                      {supplier.pixKey || "—"}
-                    </span>
-                    <span>{money(supplier.paymentAmount)}</span>
-                    <span>
-                      {supplier.nextPaymentDate
-                        ? new Date(
-                            `${supplier.nextPaymentDate}T12:00:00`,
-                          ).toLocaleDateString("pt-BR")
-                        : "—"}
-                    </span>
-                    <div className="supplier-actions">
-                      <button
-                        onClick={() => {
-                          setSupplierDraft(supplier);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        className="delete-service"
-                        onClick={() => void removeSupplier(supplier)}
-                      >
-                        Excluir
-                      </button>
+                {filteredSuppliers.map((supplier) => {
+                  const overdueDays = supplier.nextPaymentDate
+                    ? daysUntilPayment(supplier.nextPaymentDate)
+                    : null;
+                  const isOverdue = overdueDays !== null && overdueDays < 0;
+                  return (
+                    <div
+                      className={`supplier-row${isOverdue ? " row-overdue" : ""}`}
+                      key={supplier.id}
+                    >
+                      <strong>{supplier.name}</strong>
+                      <span>{supplier.document || "—"}</span>
+                      <span>{supplier.phone || "—"}</span>
+                      <span>{supplier.paymentMethod || "—"}</span>
+                      <span className="supplier-pix" title={supplier.pixKey}>
+                        {supplier.pixKey || "—"}
+                      </span>
+                      <span>{money(supplier.paymentAmount)}</span>
+                      <span>
+                        {supplier.nextPaymentDate
+                          ? new Date(
+                              `${supplier.nextPaymentDate}T12:00:00`,
+                            ).toLocaleDateString("pt-BR")
+                          : "—"}
+                        {isOverdue && (
+                          <span className="employee-overdue-tag">
+                            {Math.abs(overdueDays!)} dias em atraso
+                          </span>
+                        )}
+                      </span>
+                      <div className="supplier-actions">
+                        {isOverdue && (
+                          <button
+                            className="button danger"
+                            onClick={() =>
+                              void confirmPayeePayment("SUPPLIER", supplier.id)
+                            }
+                          >
+                            Pagar
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setSupplierDraft(supplier);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          className="delete-service"
+                          onClick={() => void removeSupplier(supplier)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {!filteredSuppliers.length && (
                   <div className="empty-history">
                     <strong>Nenhum fornecedor encontrado</strong>
@@ -3409,11 +3516,26 @@ export function BudgetApplication() {
               </div>
               <div className="payment-history-block">
                 <h3>Histórico de pagamentos</h3>
-                {paymentHistory
-                  .filter((item) => item.payeeType === "SUPPLIER")
-                  .slice(0, 10)
+                <label className="supplier-search">
+                  Filtrar por fornecedor
+                  <input
+                    type="search"
+                    placeholder="Pesquise pelo nome"
+                    value={supplierHistorySearch}
+                    onChange={(e) => {
+                      setSupplierHistorySearch(e.target.value);
+                      setSupplierHistoryCount(5);
+                    }}
+                  />
+                </label>
+                {filteredSupplierHistory
+                  .slice(0, supplierHistoryCount)
                   .map((item) => (
-                    <div className="payment-history-row" key={item.id}>
+                    <div
+                      className="payment-history-row payment-history-paid"
+                      key={item.id}
+                    >
+                      <span className="history-paid-badge">✓ Pago</span>
                       <strong>{item.payeeName}</strong>
                       <span>{money(item.amount)}</span>
                       <span>
@@ -3425,12 +3547,25 @@ export function BudgetApplication() {
                       <span>
                         Pago em: {new Date(item.paidAt).toLocaleString("pt-BR")}
                       </span>
+                      <button
+                        className="button ghost history-delete-btn"
+                        onClick={() => void deleteEmployeeHistoryEntry(item.id)}
+                        title="Excluir registro"
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
-                {!paymentHistory.some(
-                  (item) => item.payeeType === "SUPPLIER",
-                ) && (
+                {filteredSupplierHistory.length === 0 && (
                   <p className="registry-empty">Nenhum pagamento confirmado.</p>
+                )}
+                {supplierHistoryCount < filteredSupplierHistory.length && (
+                  <button
+                    className="button soft history-load-more"
+                    onClick={() => setSupplierHistoryCount((n) => n + 5)}
+                  >
+                    + 5 mais
+                  </button>
                 )}
               </div>
             </div>
