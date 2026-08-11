@@ -89,11 +89,13 @@ function mapAppSettings(row: Record<string, unknown> | null): AppSettings {
 }
 
 function mapPart(row: Record<string, unknown>): Part {
+  const unit = text(row.unit);
   return {
     id: text(row.id),
     code: text(row.code),
     description: text(row.description),
     stockQuantity: number(row.stock_quantity),
+    unit: unit === "m" || unit === "kg" ? unit : "un",
     unitPrice: number(row.unit_price),
   };
 }
@@ -266,6 +268,7 @@ export async function savePartToDatabase(part: Part) {
       code: part.code,
       description: part.description,
       stock_quantity: part.stockQuantity,
+      unit: part.unit,
       unit_price: part.unitPrice,
       updated_at: new Date().toISOString(),
     })

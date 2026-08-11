@@ -3,5 +3,6 @@ export type Part = {
   code: string;
   description: string;
   stockQuantity: number;
+  unit: "m" | "un" | "kg";
   unitPrice: number;
 };

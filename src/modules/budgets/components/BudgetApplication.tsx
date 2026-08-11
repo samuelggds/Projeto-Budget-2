@@ -71,7 +71,7 @@ import type { DiscountPreset } from "../types/DiscountPreset";
 
 const withDefaultItemUnit = (current: Budget): Budget => ({
   ...current,
-  items: current.items.map((item) => ({ ...item, unit: "un." })),
+  items: current.items.map((item) => ({ ...item, unit: item.unit || "un." })),
 });
 
 const onlyDigits = (value: string) => value.replace(/\D/g, "");
@@ -267,6 +267,7 @@ export function BudgetApplication() {
     code: "",
     description: "",
     stockQuantity: 0,
+    unit: "un",
     unitPrice: 0,
   });
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([]);
@@ -632,7 +633,7 @@ export function BudgetApplication() {
                     Math.max(Number(item.quantity) || 1, 1),
                     part.stockQuantity - alreadyUsed,
                   ),
-                  unit: "un.",
+                  unit: `${part.unit}.`,
                   unitPrice: part.unitPrice,
                 }
               : { ...item, serviceId: "", partId: "", serviceCode: code },
@@ -970,6 +971,7 @@ export function BudgetApplication() {
       code: "",
       description: "",
       stockQuantity: 0,
+      unit: "un",
       unitPrice: 0,
     });
 
@@ -1046,7 +1048,7 @@ export function BudgetApplication() {
         serviceCode: part.code,
         description: part.description,
         quantity: 1,
-        unit: "un.",
+        unit: `${part.unit}.`,
         unitPrice: part.unitPrice,
       };
       return {
@@ -2012,10 +2014,9 @@ export function BudgetApplication() {
                       }
                     />
                     <input
-                      value="un."
+                      value={item.unit}
                       readOnly
                       aria-label="Unidade do item"
-                      title="A unidade padrão dos itens é un."
                     />
                     <div className="money-input">
                       <span>R$</span>
@@ -2340,7 +2341,7 @@ export function BudgetApplication() {
                       </td>
                       <td>{item.description || "Item ou serviço"}</td>
                       <td>{item.quantity}</td>
-                      <td>un.</td>
+                      <td>{item.unit}</td>
                       <td>{money(item.unitPrice)}</td>
                       <td>{money(item.quantity * item.unitPrice)}</td>
                     </tr>
@@ -3021,6 +3022,22 @@ export function BudgetApplication() {
                     />
                   </label>
                   <label>
+                    Unidade
+                    <select
+                      value={partDraft.unit}
+                      onChange={(event) =>
+                        setPartDraft({
+                          ...partDraft,
+                          unit: event.target.value as Part["unit"],
+                        })
+                      }
+                    >
+                      <option value="un">un — Unidades</option>
+                      <option value="m">m — Metros</option>
+                      <option value="kg">kg — Quilogramas</option>
+                    </select>
+                  </label>
+                  <label>
                     Valor de venda
                     <input
                       type="number"
@@ -3102,7 +3119,9 @@ export function BudgetApplication() {
                   >
                     <code>{part.code}</code>
                     <strong>{part.description}</strong>
-                    <b>{part.stockQuantity} un.</b>
+                    <b>
+                      {part.stockQuantity} {part.unit}.
+                    </b>
                     <span>{money(part.unitPrice)}</span>
                     <em
                       className={`stock-status ${part.stockQuantity > 0 ? "available" : "unavailable"}`}

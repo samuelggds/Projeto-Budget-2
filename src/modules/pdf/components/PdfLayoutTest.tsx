@@ -173,7 +173,7 @@ function PaperPreview({
                   </td>
                   <td>{item.description}</td>
                   <td>{item.quantity}</td>
-                  <td>un.</td>
+                  <td>{item.unit}</td>
                   <td>{money(item.unitPrice)}</td>
                   <td>{money(item.quantity * item.unitPrice)}</td>
                 </tr>
