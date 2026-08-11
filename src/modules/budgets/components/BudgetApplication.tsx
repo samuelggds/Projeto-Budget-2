@@ -630,7 +630,10 @@ export function BudgetApplication() {
                   serviceCode: part.code,
                   description: part.description,
                   quantity: Math.min(
-                    Math.max(Number(item.quantity) || 1, 1),
+                    Math.max(
+                      Number(item.quantity) || 1,
+                      part.unit === "un" ? 1 : 0.001,
+                    ),
                     part.stockQuantity - alreadyUsed,
                   ),
                   unit: `${part.unit}.`,
@@ -2007,7 +2010,8 @@ export function BudgetApplication() {
                     </div>
                     <input
                       type="number"
-                      min="1"
+                      min={item.unit === "un." ? "1" : "0.001"}
+                      step={item.unit === "un." ? "1" : "0.001"}
                       value={item.quantity}
                       onChange={(e) =>
                         updateItem(item.id, "quantity", Number(e.target.value))
@@ -3011,7 +3015,7 @@ export function BudgetApplication() {
                     <input
                       type="number"
                       min="0"
-                      step="1"
+                      step={partDraft.unit === "un" ? "1" : "0.001"}
                       value={partDraft.stockQuantity || ""}
                       onChange={(event) =>
                         setPartDraft({
