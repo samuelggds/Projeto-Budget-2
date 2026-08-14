@@ -17,6 +17,13 @@ export type BudgetItem = {
   unitPrice: number;
 };
 
+export type AppliedDiscount = {
+  id: string;
+  name: string;
+  type: "percentage" | "fixed";
+  value: number;
+};
+
 export type Budget = {
   id: string;
   number: string;
@@ -46,4 +53,5 @@ export type Budget = {
   stockDeductedAt?: string;
   discountLabel?: string;
   discountAmount?: number;
+  discounts?: AppliedDiscount[];
 };

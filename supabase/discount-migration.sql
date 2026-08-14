@@ -6,4 +6,5 @@ alter table public.app_settings
 
 alter table public.budgets
   add column if not exists discount_label text,
-  add column if not exists discount_amount numeric(12,2);
+  add column if not exists discount_amount numeric(12,2),
+  add column if not exists discounts jsonb not null default '[]'::jsonb;

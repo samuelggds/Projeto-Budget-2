@@ -1,7 +1,7 @@
-
 import { useMemo, useState } from "react";
 import type { Budget } from "../types/Budget";
 import {
+  calculateDiscountTotal,
   calculateFinalTotal,
   formatMoney as money,
 } from "../services/budgetCalculations";
@@ -392,9 +392,9 @@ export function FinancialPanel({ saved }: Props) {
                       {b.status}
                     </span>
                     <span className="financial-budget-discount">
-                      {b.discountAmount ? (
+                      {calculateDiscountTotal(b) > 0 ? (
                         <span className="financial-discount-badge">
-                          − {money(b.discountAmount)}
+                          − {money(calculateDiscountTotal(b))}
                         </span>
                       ) : (
                         "—"
@@ -497,9 +497,9 @@ export function FinancialPanel({ saved }: Props) {
                         {b.status}
                       </span>
                       <span className="financial-budget-discount">
-                        {b.discountAmount ? (
+                        {calculateDiscountTotal(b) > 0 ? (
                           <span className="financial-discount-badge">
-                            − {money(b.discountAmount)}
+                            − {money(calculateDiscountTotal(b))}
                           </span>
                         ) : (
                           "—"

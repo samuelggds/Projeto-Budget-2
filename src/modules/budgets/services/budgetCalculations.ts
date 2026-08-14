@@ -13,5 +13,20 @@ export const calculateItemTotal = (item: BudgetItem) =>
 export const calculateBudgetTotal = (budget: Budget) =>
   budget.items.reduce((total, item) => total + calculateItemTotal(item), 0);
 
+export const calculateDiscountTotal = (budget: Budget): number => {
+  const subtotal = calculateBudgetTotal(budget);
+  if (!budget.discounts?.length) return budget.discountAmount || 0;
+
+  const discountTotal = budget.discounts.reduce(
+    (total, discount) =>
+      total +
+      (discount.type === "percentage"
+        ? (subtotal * discount.value) / 100
+        : discount.value),
+    0,
+  );
+  return Math.min(subtotal, discountTotal);
+};
+
 export const calculateFinalTotal = (budget: Budget): number =>
-  Math.max(0, calculateBudgetTotal(budget) - (budget.discountAmount || 0));
+  Math.max(0, calculateBudgetTotal(budget) - calculateDiscountTotal(budget));

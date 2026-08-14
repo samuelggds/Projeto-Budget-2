@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Budget, BudgetItem } from "../types/Budget";
 import {
   calculateBudgetTotal,
+  calculateDiscountTotal,
   calculateFinalTotal,
   calculateItemTotal,
   formatMoney,
@@ -69,6 +70,29 @@ describe("calculateFinalTotal", () => {
   it("deduz o desconto fixo do total", () => {
     const budget = { ...budgetWith([item(2, 100)]), discountAmount: 30 };
     expect(calculateFinalTotal(budget)).toBe(170);
+  });
+
+  it("acumula vários descontos aplicados", () => {
+    const budget: Budget = {
+      ...budgetWith([item(2, 100)]),
+      discounts: [
+        {
+          id: "discount-1",
+          name: "Cliente fiel",
+          type: "percentage",
+          value: 10,
+        },
+        {
+          id: "discount-2",
+          name: "Pagamento à vista",
+          type: "fixed",
+          value: 30,
+        },
+      ],
+    };
+
+    expect(calculateDiscountTotal(budget)).toBe(50);
+    expect(calculateFinalTotal(budget)).toBe(150);
   });
 
   it("nunca retorna valor negativo", () => {

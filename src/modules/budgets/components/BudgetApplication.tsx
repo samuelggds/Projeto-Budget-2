@@ -7,6 +7,7 @@ import {
 } from "../services/budgetFactory";
 import {
   calculateBudgetTotal,
+  calculateDiscountTotal,
   calculateFinalTotal,
   formatMoney as money,
 } from "../services/budgetCalculations";
@@ -304,6 +305,7 @@ export function BudgetApplication() {
   const bgInputRef = useRef<HTMLInputElement>(null);
 
   const total = useMemo(() => calculateBudgetTotal(budget), [budget]);
+  const discountTotal = useMemo(() => calculateDiscountTotal(budget), [budget]);
   const finalTotal = useMemo(() => calculateFinalTotal(budget), [budget]);
   const filtered = filterBudgets(saved, {
     search,
@@ -888,26 +890,36 @@ export function BudgetApplication() {
   };
 
   const applyDiscount = (preset: DiscountPreset) => {
-    const amount =
-      preset.type === "percentage"
-        ? Math.min(total, (total * preset.value) / 100)
-        : Math.min(total, preset.value);
-    const label =
-      preset.type === "percentage" ? `${preset.value}%` : money(preset.value);
-    setBudget((current) => ({
-      ...current,
-      discountLabel: label,
-      discountAmount: amount,
-    }));
-    setShowDiscountPicker(false);
+    setBudget((current) => {
+      const discounts = [
+        ...(current.discounts || []),
+        { ...preset, id: crypto.randomUUID() },
+      ];
+      return {
+        ...current,
+        discounts,
+        discountLabel: discounts.map((discount) => discount.name).join(" + "),
+        discountAmount: calculateDiscountTotal({ ...current, discounts }),
+      };
+    });
   };
 
-  const removeDiscount = () => {
-    setBudget((current) => ({
-      ...current,
-      discountLabel: undefined,
-      discountAmount: undefined,
-    }));
+  const removeDiscount = (id: string) => {
+    setBudget((current) => {
+      const discounts = (current.discounts || []).filter(
+        (discount) => discount.id !== id,
+      );
+      return {
+        ...current,
+        discounts: discounts.length ? discounts : undefined,
+        discountLabel: discounts.length
+          ? discounts.map((discount) => discount.name).join(" + ")
+          : undefined,
+        discountAmount: discounts.length
+          ? calculateDiscountTotal({ ...current, discounts })
+          : undefined,
+      };
+    });
   };
 
   const registerService = async () => {
@@ -2071,65 +2083,103 @@ export function BudgetApplication() {
               </div>
               <div className="total-area">
                 <div className="discount-section">
-                  {budget.discountAmount ? (
+                  {discountTotal > 0 && (
                     <div className="discount-applied">
                       <div className="discount-applied-row">
                         <span>Subtotal</span>
                         <span>{money(total)}</span>
                       </div>
-                      <div className="discount-applied-row">
-                        <span>{budget.discountLabel}</span>
-                        <div className="discount-applied-value">
-                          <span>− {money(budget.discountAmount)}</span>
-                          <button
-                            className="remove-discount-btn"
-                            onClick={removeDiscount}
-                            title="Remover desconto"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="discount-trigger">
-                      <button
-                        className="button ghost"
-                        onClick={() => setShowDiscountPicker((v) => !v)}
-                      >
-                        ％ Desconto
-                      </button>
-                      {showDiscountPicker && (
-                        <div className="discount-picker">
-                          {appSettings.discounts.length === 0 ? (
-                            <p className="discount-empty">
-                              Nenhum desconto cadastrado. Configure em
-                              Configurações → Desconto.
-                            </p>
-                          ) : (
-                            appSettings.discounts.map((preset) => (
-                              <button
-                                key={preset.id}
-                                className="discount-option"
-                                onClick={() => applyDiscount(preset)}
-                              >
-                                <strong>{preset.name}</strong>
-                                <span>
-                                  {preset.type === "percentage"
-                                    ? `${preset.value}%`
-                                    : money(preset.value)}
-                                </span>
-                              </button>
-                            ))
-                          )}
+                      {budget.discounts?.length ? (
+                        budget.discounts.map((discount) => {
+                          const amount =
+                            discount.type === "percentage"
+                              ? (total * discount.value) / 100
+                              : discount.value;
+                          return (
+                            <div
+                              className="discount-applied-row"
+                              key={discount.id}
+                            >
+                              <span>
+                                {discount.name} (
+                                {discount.type === "percentage"
+                                  ? `${discount.value}%`
+                                  : money(discount.value)}
+                                )
+                              </span>
+                              <div className="discount-applied-value">
+                                <span>− {money(Math.min(total, amount))}</span>
+                                <button
+                                  className="remove-discount-btn"
+                                  onClick={() => removeDiscount(discount.id)}
+                                  title={`Remover ${discount.name}`}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="discount-applied-row">
+                          <span>{budget.discountLabel}</span>
+                          <div className="discount-applied-value">
+                            <span>− {money(discountTotal)}</span>
+                            <button
+                              className="remove-discount-btn"
+                              onClick={() =>
+                                setBudget((current) => ({
+                                  ...current,
+                                  discountLabel: undefined,
+                                  discountAmount: undefined,
+                                }))
+                              }
+                              title="Remover desconto"
+                            >
+                              ×
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
                   )}
+                  <div className="discount-trigger">
+                    <button
+                      className="button ghost"
+                      onClick={() => setShowDiscountPicker((v) => !v)}
+                    >
+                      ％ {discountTotal > 0 ? "Adicionar desconto" : "Desconto"}
+                    </button>
+                    {showDiscountPicker && (
+                      <div className="discount-picker">
+                        {appSettings.discounts.length === 0 ? (
+                          <p className="discount-empty">
+                            Nenhum desconto cadastrado. Configure em
+                            Configurações → Desconto.
+                          </p>
+                        ) : (
+                          appSettings.discounts.map((preset) => (
+                            <button
+                              key={preset.id}
+                              className="discount-option"
+                              onClick={() => applyDiscount(preset)}
+                            >
+                              <strong>{preset.name}</strong>
+                              <span>
+                                {preset.type === "percentage"
+                                  ? `${preset.value}%`
+                                  : money(preset.value)}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="total-box">
                   <span>
-                    {budget.discountAmount ? "Total" : "Total do orçamento"}
+                    {discountTotal > 0 ? "Total" : "Total do orçamento"}
                   </span>
                   <strong>{money(finalTotal)}</strong>
                 </div>
@@ -2364,14 +2414,14 @@ export function BudgetApplication() {
                   </p>
                 </div>
                 <div>
-                  {budget.discountAmount ? (
+                  {discountTotal > 0 ? (
                     <>
                       <p>
                         <span>Subtotal:</span> {money(total)}
                       </p>
                       <p>
                         <span>Desconto de {budget.discountLabel}:</span>{" "}
-                        {money(budget.discountAmount)}
+                        {money(discountTotal)}
                       </p>
                       <span>VALOR TOTAL</span>
                       <strong>{money(finalTotal)}</strong>

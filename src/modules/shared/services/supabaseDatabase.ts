@@ -1,4 +1,8 @@
-import type { Budget, BudgetStatus } from "../../budgets/types/Budget";
+import type {
+  AppliedDiscount,
+  Budget,
+  BudgetStatus,
+} from "../../budgets/types/Budget";
 import type { Client } from "../../clients/types/Client";
 import type { Service } from "../../services/types/Service";
 import { supabase } from "../../auth/services/supabase";
@@ -12,6 +16,7 @@ import type {
   PaymentHistory,
   PayeeType,
 } from "../../payments/types/PaymentHistory";
+import { calculateDiscountTotal } from "../../budgets/services/budgetCalculations";
 
 type DatabaseStatus =
   | "ENVIADO"
@@ -41,6 +46,31 @@ const fromDatabaseStatus: Record<DatabaseStatus, BudgetStatus> = {
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const number = (value: unknown) => Number(value || 0);
+
+function mapAppliedDiscounts(value: unknown): AppliedDiscount[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw) => {
+    if (!raw || typeof raw !== "object") return [];
+    const discount = raw as Record<string, unknown>;
+    const type = discount.type;
+    const discountValue = number(discount.value);
+    if (
+      !text(discount.id) ||
+      !text(discount.name) ||
+      (type !== "percentage" && type !== "fixed") ||
+      discountValue <= 0
+    )
+      return [];
+    return [
+      {
+        id: text(discount.id),
+        name: text(discount.name),
+        type,
+        value: discountValue,
+      },
+    ];
+  });
+}
 
 function mapClient(row: Record<string, unknown>): Client {
   return {
@@ -211,6 +241,7 @@ export async function loadDatabase() {
       discountAmount: row.discount_amount
         ? number(row.discount_amount)
         : undefined,
+      discounts: mapAppliedDiscounts(row.discounts),
       items: items.map((item) => ({
         id: text(item.id),
         serviceId: text(item.service_id),
@@ -482,6 +513,15 @@ export async function deleteServiceFromDatabase(id: string) {
 export async function saveBudgetToDatabase(budget: Budget) {
   const updatedAt = new Date().toISOString();
   const createdAt = budget.createdAt || updatedAt;
+  const normalizedBudget = budget.discounts?.length
+    ? {
+        ...budget,
+        discountLabel: budget.discounts
+          .map((discount) => discount.name)
+          .join(" + "),
+        discountAmount: calculateDiscountTotal(budget),
+      }
+    : budget;
   let client = budget.client;
   if (!client.id && client.name.trim()) {
     client = await saveClientToDatabase({ ...client, id: crypto.randomUUID() });
@@ -496,8 +536,9 @@ export async function saveBudgetToDatabase(budget: Budget) {
     status: toDatabaseStatus[budget.status],
     payment: budget.payment || null,
     notes: budget.notes || null,
-    discount_label: budget.discountLabel || null,
-    discount_amount: budget.discountAmount ?? null,
+    discount_label: normalizedBudget.discountLabel || null,
+    discount_amount: normalizedBudget.discountAmount ?? null,
+    discounts: normalizedBudget.discounts || [],
     created_at: createdAt,
     updated_at: updatedAt,
   });
@@ -524,7 +565,7 @@ export async function saveBudgetToDatabase(budget: Budget) {
     );
     assertNoError(itemsError);
   }
-  return { ...budget, client, createdAt, updatedAt };
+  return { ...normalizedBudget, client, createdAt, updatedAt };
 }
 
 export async function loadNextBudgetNumber() {
