@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../auth/services/supabase";
 import {
   activateSubscription,
@@ -17,26 +17,26 @@ const date = (value?: string) =>
 
 export function BillingPanel() {
   const brand = usePublicBrand();
-  const [subscription, setSubscription] = useState<AppSubscription | null>(
-    null,
-  );
+  const [subscription, setSubscription] = useState<AppSubscription | null>(null);
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState("");
   const [visibleInvoiceCount, setVisibleInvoiceCount] = useState(5);
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     const data = await loadBilling();
     setSubscription(data.subscription);
     setInvoices(data.invoices);
-  };
+    setCurrentTime(Date.now());
+  }, []);
 
   useEffect(() => {
     refresh()
       .catch((error: Error) => setMessage(error.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
     const channel = supabase
@@ -52,25 +52,43 @@ export function BillingPanel() {
         () => void refresh(),
       )
       .subscribe();
+
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [refresh]);
 
   const pending = invoices.find((invoice) => invoice.status === "PENDING");
+  const pendingId = pending?.id;
+  const pendingPixExpiresAt = pending?.pixExpiresAt;
+  const pendingPixExpired = Boolean(
+    pendingPixExpiresAt &&
+      currentTime !== null &&
+      new Date(pendingPixExpiresAt).getTime() <= currentTime,
+  );
+  const pendingPixMissing = Boolean(
+    pending && (!pending.pixQrCode || !pending.pixQrCodeBase64),
+  );
+  const payablePending =
+    pending && !pendingPixExpired && !pendingPixMissing ? pending : undefined;
 
   useEffect(() => {
     if (!subscription?.billingEnabled || !subscription.currentPeriodEndsAt)
       return;
+
     let cancelled = false;
     let timer = 0;
+    const currentPeriodEndsAt = subscription.currentPeriodEndsAt;
+
     const schedule = () => {
-      const dueIn =
-        new Date(subscription.currentPeriodEndsAt as string).getTime() -
-        Date.now();
-      const delay = pending
-        ? 10_000
+      const dueIn = new Date(currentPeriodEndsAt).getTime() - Date.now();
+      const expiresIn = pendingPixExpiresAt
+        ? new Date(pendingPixExpiresAt).getTime() - Date.now()
+        : Number.POSITIVE_INFINITY;
+      const delay = pendingId
+        ? Math.min(Math.max(expiresIn, 1_000), 10_000)
         : Math.min(Math.max(dueIn, 1_000), 60 * 60 * 1_000);
+
       timer = window.setTimeout(async () => {
         try {
           await refreshSubscriptionCharge();
@@ -81,6 +99,7 @@ export function BillingPanel() {
         if (!cancelled) schedule();
       }, delay);
     };
+
     schedule();
     return () => {
       cancelled = true;
@@ -89,7 +108,9 @@ export function BillingPanel() {
   }, [
     subscription?.billingEnabled,
     subscription?.currentPeriodEndsAt,
-    pending,
+    pendingId,
+    pendingPixExpiresAt,
+    refresh,
   ]);
 
   const run = async (action: () => Promise<unknown>, success: string) => {
@@ -112,6 +133,7 @@ export function BillingPanel() {
         <span>Carregando mensalidade...</span>
       </div>
     );
+
   const visibleInvoices = invoices.slice(0, visibleInvoiceCount);
   const hasMoreInvoices = visibleInvoiceCount < invoices.length;
 
@@ -136,6 +158,7 @@ export function BillingPanel() {
           Sair
         </button>
       </header>
+
       <section className="billing-grid">
         <article className="card billing-status-card">
           <div className="billing-card-title">
@@ -143,14 +166,13 @@ export function BillingPanel() {
               <span>Situação atual</span>
               <h2>{subscription.status}</h2>
             </div>
-            <em
-              className={`billing-badge ${subscription.status.toLowerCase()}`}
-            >
+            <em className={`billing-badge ${subscription.status.toLowerCase()}`}>
               {subscription.billingEnabled
                 ? "Recorrência ligada"
                 : "Recorrência desligada"}
             </em>
           </div>
+
           <div className="billing-dates">
             <div>
               <span>Valor mensal</span>
@@ -169,6 +191,7 @@ export function BillingPanel() {
               <strong>{date(subscription.gracePeriodEndsAt)}</strong>
             </div>
           </div>
+
           <div className="billing-actions">
             {!subscription.billingEnabled && (
               <button
@@ -181,6 +204,7 @@ export function BillingPanel() {
                 Ativar mensalidade
               </button>
             )}
+
             {subscription.billingEnabled && (
               <button
                 className="button danger"
@@ -198,6 +222,7 @@ export function BillingPanel() {
                 Desativar mensalidade
               </button>
             )}
+
             {subscription.billingEnabled && (
               <button
                 className="button soft"
@@ -210,6 +235,7 @@ export function BillingPanel() {
               </button>
             )}
           </div>
+
           {message && <div className="billing-message">{message}</div>}
         </article>
 
@@ -220,42 +246,68 @@ export function BillingPanel() {
               {pending ? money(pending.amount) : "Nenhuma cobrança pendente"}
             </h2>
           </div>
-          {pending?.pixQrCodeBase64 && (
+
+          {pendingPixExpired && (
+            <p>O PIX anterior expirou. Gere ou atualize a cobrança para receber um novo QR Code.</p>
+          )}
+
+          {pendingPixMissing && !pendingPixExpired && (
+            <p>A cobrança existe, mas o QR Code ainda não está disponível.</p>
+          )}
+
+          {payablePending?.pixQrCodeBase64 && (
             <img
-              src={`data:image/png;base64,${pending.pixQrCodeBase64}`}
+              src={`data:image/png;base64,${payablePending.pixQrCodeBase64}`}
               alt="QR Code Pix"
             />
           )}
-          {pending?.pixQrCode && (
+
+          {payablePending?.pixQrCode && (
             <>
-              <textarea readOnly value={pending.pixQrCode} />
+              <textarea readOnly value={payablePending.pixQrCode} />
               <button
                 className="button primary"
                 onClick={() =>
-                  void navigator.clipboard.writeText(pending.pixQrCode ?? "")
+                  void navigator.clipboard.writeText(
+                    payablePending.pixQrCode ?? "",
+                  )
                 }
               >
                 Copiar Pix
               </button>
             </>
           )}
-          {pending?.pixTicketUrl && (
+
+          {payablePending?.pixTicketUrl && (
             <a
               className="button soft"
-              href={pending.pixTicketUrl}
+              href={payablePending.pixTicketUrl}
               target="_blank"
               rel="noreferrer"
             >
               Abrir no Mercado Pago
             </a>
           )}
+
+          {pending && (pendingPixExpired || pendingPixMissing) && (
+            <button
+              className="button primary"
+              type="button"
+              disabled={working}
+              onClick={() =>
+                void run(refreshSubscriptionCharge, "Novo QR Code gerado")
+              }
+            >
+              {working ? "Gerando QR Code..." : "Gerar novo QR Code"}
+            </button>
+          )}
+
           {!pending && (
-            <p>
-              O Pix será criado automaticamente quando o ciclo mensal vencer.
-            </p>
+            <p>O Pix será criado automaticamente quando o ciclo mensal vencer.</p>
           )}
         </article>
       </section>
+
       <section className="card billing-history">
         <div className="registry-title">
           <div>
@@ -266,6 +318,7 @@ export function BillingPanel() {
             </p>
           </div>
         </div>
+
         <div className="billing-table">
           <div className="billing-row head">
             <span>Referência</span>
@@ -274,6 +327,7 @@ export function BillingPanel() {
             <span>Status</span>
             <span>Pagamento</span>
           </div>
+
           {visibleInvoices.map((invoice) => (
             <div className="billing-row" key={invoice.id}>
               <strong>{invoice.externalReference}</strong>
@@ -283,10 +337,12 @@ export function BillingPanel() {
               <span>{date(invoice.paidAt)}</span>
             </div>
           ))}
+
           {!invoices.length && (
             <div className="empty-history">Nenhuma mensalidade gerada.</div>
           )}
         </div>
+
         {invoices.length > 5 && (
           <div className="billing-pagination">
             {hasMoreInvoices && (
@@ -302,6 +358,7 @@ export function BillingPanel() {
                 Carregar mais 5
               </button>
             )}
+
             {visibleInvoiceCount > 5 && (
               <button
                 className="button ghost"
