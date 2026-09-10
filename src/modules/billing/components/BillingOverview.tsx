@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../auth/services/supabase";
 import { loadBilling, refreshSubscriptionCharge } from "../services/billingApi";
 import type { AppSubscription, SubscriptionInvoice } from "../types/Billing";
@@ -7,11 +7,6 @@ const money = (value: number) =>
   value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const date = (value?: string) =>
   value ? new Date(value).toLocaleString("pt-BR") : "—";
-const pixIsExpired = (invoice?: SubscriptionInvoice) =>
-  Boolean(
-    invoice?.pixExpiresAt &&
-      new Date(invoice.pixExpiresAt).getTime() <= Date.now(),
-  );
 
 export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   const [subscription, setSubscription] = useState<AppSubscription | null>(
@@ -22,9 +17,10 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
   const [visibleInvoiceCount, setVisibleInvoiceCount] = useState(5);
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
   const automaticRenewalRef = useRef(false);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const data = await loadBilling();
@@ -34,30 +30,39 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
     } catch (error) {
       setMessage((error as Error).message);
     } finally {
+      setCurrentTime(Date.now());
       setLoading(false);
     }
-  };
+  }, []);
 
-  const generatePix = async (automatic = false) => {
-    if (automatic) {
-      if (automaticRenewalRef.current) return;
-      automaticRenewalRef.current = true;
-    }
-    setGenerating(true);
-    setMessage(automatic ? "Renovando PIX expirado..." : "Gerando novo QR Code...");
-    try {
-      await refreshSubscriptionCharge();
-      await refresh();
-    } catch (err) {
-      setMessage((err as Error).message);
-    } finally {
-      setGenerating(false);
-      if (automatic) automaticRenewalRef.current = false;
-    }
-  };
+  const generatePix = useCallback(
+    async (automatic = false) => {
+      if (automatic) {
+        if (automaticRenewalRef.current) return;
+        automaticRenewalRef.current = true;
+      }
+
+      setGenerating(true);
+      setMessage(
+        automatic ? "Renovando PIX expirado..." : "Gerando novo QR Code...",
+      );
+
+      try {
+        await refreshSubscriptionCharge();
+        await refresh();
+      } catch (err) {
+        setMessage((err as Error).message);
+      } finally {
+        setGenerating(false);
+        if (automatic) automaticRenewalRef.current = false;
+      }
+    },
+    [refresh],
+  );
 
   useEffect(() => {
     void refresh();
+
     const channel = supabase
       .channel(`billing-overview-${crypto.randomUUID()}`)
       .on(
@@ -71,15 +76,20 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
         () => void refresh(),
       )
       .subscribe();
+
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [refresh]);
 
   const pending = invoices.find((invoice) => invoice.status === "PENDING");
   const pendingId = pending?.id;
   const pendingPixExpiresAt = pending?.pixExpiresAt;
-  const pendingPixExpired = pixIsExpired(pending);
+  const pendingPixExpired = Boolean(
+    pendingPixExpiresAt &&
+      currentTime !== null &&
+      new Date(pendingPixExpiresAt).getTime() <= currentTime,
+  );
   const pendingPixMissing = Boolean(
     pending && (!pending.pixQrCode || !pending.pixQrCodeBase64),
   );
@@ -87,16 +97,20 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
     pending && !pendingPixExpired && !pendingPixMissing ? pending : undefined;
   const visibleInvoices = invoices.slice(0, visibleInvoiceCount);
   const hasMoreInvoices = visibleInvoiceCount < invoices.length;
-  const shouldOfferManualGeneration = Boolean(
-    subscription.billingEnabled &&
+  const cycleIsDue = Boolean(
+    subscription?.billingEnabled &&
       subscription.currentPeriodEndsAt &&
-      Date.now() >= new Date(subscription.currentPeriodEndsAt).getTime() &&
-      (!payablePending || pendingPixExpired || pendingPixMissing),
+      currentTime !== null &&
+      new Date(subscription.currentPeriodEndsAt).getTime() <= currentTime,
+  );
+  const shouldOfferManualGeneration = Boolean(
+    cycleIsDue && (!payablePending || pendingPixExpired || pendingPixMissing),
   );
 
   useEffect(() => {
     if (!subscription?.billingEnabled || !subscription.currentPeriodEndsAt)
       return;
+
     let cancelled = false;
     let timer = 0;
     const currentPeriodEndsAt = subscription.currentPeriodEndsAt;
@@ -117,11 +131,13 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
         } catch (err) {
           setMessage((err as Error).message);
         }
+
         if (!cancelled) schedule();
       }, delay);
     };
 
     schedule();
+
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -131,17 +147,19 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
     subscription?.currentPeriodEndsAt,
     pendingId,
     pendingPixExpiresAt,
+    refresh,
   ]);
 
   useEffect(() => {
     if (!pendingId || (!pendingPixExpired && !pendingPixMissing)) return;
     void generatePix(true);
-  }, [pendingId, pendingPixExpired, pendingPixMissing]);
+  }, [pendingId, pendingPixExpired, pendingPixMissing, generatePix]);
 
   if (loading && !subscription)
     return (
       <div className="billing-inline-loading">Carregando mensalidade...</div>
     );
+
   if (!subscription)
     return (
       <div className="billing-message">
@@ -160,6 +178,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
           </span>
         </div>
       )}
+
       <section className="billing-grid">
         <article className="card billing-status-card">
           <div className="billing-card-title">
@@ -175,6 +194,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
                 : "Recorrência desligada"}
             </em>
           </div>
+
           <div className="billing-dates">
             <div>
               <span>Valor mensal</span>
@@ -193,11 +213,13 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               <strong>{date(subscription.gracePeriodEndsAt)}</strong>
             </div>
           </div>
+
           <button className="button soft" onClick={() => void refresh()}>
             Atualizar informações
           </button>
           {message && <div className="billing-message">{message}</div>}
         </article>
+
         <article className="card pix-card">
           <div>
             <span>PIX DO CICLO ATUAL</span>
@@ -205,24 +227,28 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               {pending ? money(pending.amount) : "Nenhuma cobrança pendente"}
             </h2>
           </div>
+
           {pendingPixExpired && (
             <p>
               O PIX anterior expirou. Um novo QR Code está sendo gerado
               automaticamente.
             </p>
           )}
+
           {pendingPixMissing && !pendingPixExpired && (
             <p>
               A cobrança existe, mas o QR Code ainda não está disponível. Você
               pode tentar gerar novamente pelo botão abaixo.
             </p>
           )}
+
           {payablePending?.pixQrCodeBase64 && (
             <img
               src={`data:image/png;base64,${payablePending.pixQrCodeBase64}`}
               alt="QR Code Pix"
             />
           )}
+
           {payablePending?.pixQrCode && (
             <>
               <textarea readOnly value={payablePending.pixQrCode} />
@@ -238,6 +264,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               </button>
             </>
           )}
+
           {payablePending?.pixTicketUrl && (
             <a
               className="button soft"
@@ -248,6 +275,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               Abrir no Mercado Pago
             </a>
           )}
+
           {shouldOfferManualGeneration && (
             <button
               className="button primary"
@@ -258,6 +286,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               {generating ? "Gerando QR Code..." : "Gerar novo QR Code"}
             </button>
           )}
+
           {!pending && !shouldOfferManualGeneration && (
             <p>
               A cobrança Pix aparecerá aqui automaticamente quando o ciclo
@@ -266,6 +295,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
           )}
         </article>
       </section>
+
       <section className="card billing-history">
         <div className="registry-title">
           <div>
@@ -276,6 +306,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
             </p>
           </div>
         </div>
+
         <div className="billing-table">
           <div className="billing-row head">
             <span>Referência</span>
@@ -284,6 +315,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
             <span>Status</span>
             <span>Pagamento</span>
           </div>
+
           {visibleInvoices.map((invoice) => (
             <div className="billing-row" key={invoice.id}>
               <strong>{invoice.externalReference}</strong>
@@ -293,12 +325,14 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               <span>{date(invoice.paidAt)}</span>
             </div>
           ))}
+
           {!invoices.length && (
             <div className="empty-history">
               Nenhuma fatura gerada até o momento.
             </div>
           )}
         </div>
+
         {invoices.length > 5 && (
           <div className="billing-pagination">
             {hasMoreInvoices && (
