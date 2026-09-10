@@ -6,6 +6,48 @@ const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 
+// O prazo do PIX e independente do prazo de tolerancia da assinatura.
+// Enquanto existir uma fatura pendente, um novo PIX sera criado sempre que
+// a cobranca anterior expirar ou for encerrada sem pagamento.
+const PIX_VALIDITY_DAYS = 7;
+const terminalStatuses = new Set([
+  "expired",
+  "cancelled",
+  "canceled",
+  "failed",
+  "rejected",
+]);
+
+function normalizedStatus(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function hasExpiredLocally(invoice: Record<string, unknown>, now: Date) {
+  if (!invoice.pix_expires_at) return false;
+  const expiresAt = new Date(String(invoice.pix_expires_at)).getTime();
+  return Number.isFinite(expiresAt) && expiresAt <= now.getTime();
+}
+
+function isTerminalWithoutPayment(order: Record<string, unknown>) {
+  const transactions = order.transactions as
+    | { payments?: Array<Record<string, unknown>> }
+    | undefined;
+  const payment = transactions?.payments?.[0];
+  return (
+    terminalStatuses.has(normalizedStatus(order.status)) ||
+    terminalStatuses.has(normalizedStatus(payment?.status)) ||
+    terminalStatuses.has(normalizedStatus(payment?.status_detail))
+  );
+}
+
+async function idempotencyKey(seed: string) {
+  const bytes = new TextEncoder().encode(seed);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function authorized(request: Request) {
   const cronSecret = Deno.env.get("CRON_SECRET") ?? "";
   if (cronSecret && request.headers.get("x-cron-secret") === cronSecret)
@@ -60,7 +102,6 @@ Deno.serve(async (request) => {
       now > new Date(subscription.grace_period_ends_at);
 
     if (isOverdue) {
-      // Block if not already blocked
       if (subscription.status !== "BLOCKED") {
         const { data, error: blockError } = await admin.rpc(
           "block_overdue_subscription",
@@ -68,11 +109,10 @@ Deno.serve(async (request) => {
         if (blockError) throw blockError;
         Object.assign(subscription, data);
       }
-      // Deactivated subscriptions don't generate QR
       if (subscription.deactivated_at) {
         return response({ subscription, message: "Mensalidade desativada" });
       }
-      // BLOCKED but not deactivated: fall through to check/generate QR so client can pay to unblock
+      // Mesmo bloqueado, continua abaixo para manter uma cobranca PIX valida.
     }
 
     if (!isOverdue && now < new Date(subscription.current_period_ends_at)) {
@@ -108,24 +148,29 @@ Deno.serve(async (request) => {
 
     if (!mercadoPago.accessToken || !mercadoPago.payer.email)
       throw new Error("Credenciais do Mercado Pago incompletas");
+
     const chargeAmount = Number(invoice.amount);
     if (!Number.isFinite(chargeAmount) || chargeAmount <= 0)
       throw new Error("Valor da cobrança inválido");
     const mercadoPagoAmount = chargeAmount.toFixed(2);
+
     if (invoice.mercado_pago_order_id) {
+      const previousOrderId = String(invoice.mercado_pago_order_id);
       const orderResponse = await fetch(
-        `https://api.mercadopago.com/v1/orders/${encodeURIComponent(invoice.mercado_pago_order_id)}`,
+        `https://api.mercadopago.com/v1/orders/${encodeURIComponent(previousOrderId)}`,
         {
           headers: { Authorization: `Bearer ${mercadoPago.accessToken}` },
         },
       );
       const order = await orderResponse.json();
+
       if (orderResponse.ok) {
         const payment = order.transactions?.payments?.[0];
         const paid =
           order.status === "processed" ||
           payment?.status === "processed" ||
           payment?.status_detail === "accredited";
+
         if (paid) {
           const { data: paidSubscription, error: paidError } = await admin.rpc(
             "mark_subscription_invoice_paid",
@@ -142,30 +187,30 @@ Deno.serve(async (request) => {
             message: "Pagamento confirmado",
           });
         }
+
+        const shouldRenew =
+          hasExpiredLocally(invoice as Record<string, unknown>, now) ||
+          isTerminalWithoutPayment(order as Record<string, unknown>);
+
+        if (!shouldRenew && invoice.pix_qr_code) {
+          return response({
+            invoice,
+            message: `Pagamento ainda pendente (${order.status ?? "sem status"} / ${payment?.status_detail ?? payment?.status ?? "sem detalhe"})`,
+          });
+        }
+      } else if (orderResponse.status !== 404) {
+        throw new Error(
+          order?.message ?? "Não foi possível consultar a cobrança existente",
+        );
       }
-      if (invoice.pix_qr_code) {
-        const payment = order.transactions?.payments?.[0];
-        return response({
-          invoice,
-          message: `Pagamento ainda pendente (${order.status ?? "sem status"} / ${payment?.status_detail ?? payment?.status ?? "sem detalhe"})`,
-        });
-      }
+      // Order expirada/encerrada ou nao encontrada: gera uma nova abaixo.
     }
 
-    // For blocked subscriptions use a fixed 7-day window; otherwise use remaining grace days
-    const remainingDays = isOverdue
-      ? 7
-      : Math.max(
-          1,
-          Math.min(
-            30,
-            Math.ceil(
-              (new Date(subscription.grace_period_ends_at).getTime() -
-                now.getTime()) /
-                86400000,
-            ),
-          ),
-        );
+    const generationSeed = [
+      invoice.id,
+      invoice.mercado_pago_order_id ?? "initial",
+      invoice.pix_expires_at ?? "initial",
+    ].join(":");
     const mercadoPagoResponse = await fetch(
       "https://api.mercadopago.com/v1/orders",
       {
@@ -173,7 +218,7 @@ Deno.serve(async (request) => {
         headers: {
           Authorization: `Bearer ${mercadoPago.accessToken}`,
           "Content-Type": "application/json",
-          "X-Idempotency-Key": invoice.id,
+          "X-Idempotency-Key": await idempotencyKey(generationSeed),
         },
         body: JSON.stringify({
           type: "online",
@@ -185,7 +230,7 @@ Deno.serve(async (request) => {
               {
                 amount: mercadoPagoAmount,
                 payment_method: { id: "pix", type: "bank_transfer" },
-                expiration_time: `P${remainingDays}D`,
+                expiration_time: `P${PIX_VALIDITY_DAYS}D`,
               },
             ],
           },
@@ -198,30 +243,45 @@ Deno.serve(async (request) => {
       throw new Error(
         order?.message ?? "Mercado Pago recusou a criação do Pix",
       );
+
     const payment = order.transactions?.payments?.[0];
     const method = payment?.payment_method ?? {};
+    if (!method.qr_code)
+      throw new Error("Mercado Pago criou a cobrança sem retornar o QR Code Pix");
+
+    const pixExpiresAt = new Date(
+      now.getTime() + PIX_VALIDITY_DAYS * 86400000,
+    ).toISOString();
     const { data: updatedInvoice, error: updateError } = await admin
       .from("subscription_invoices")
       .update({
         mercado_pago_order_id: order.id,
         mercado_pago_payment_id: payment?.id ?? null,
-        pix_qr_code: method.qr_code ?? null,
+        pix_qr_code: method.qr_code,
         pix_qr_code_base64: method.qr_code_base64 ?? null,
         pix_ticket_url: method.ticket_url ?? null,
-        pix_expires_at: new Date(
-          now.getTime() + remainingDays * 86400000,
-        ).toISOString(),
+        pix_expires_at: pixExpiresAt,
         updated_at: now.toISOString(),
       })
       .eq("id", invoice.id)
       .select()
       .single();
     if (updateError) throw updateError;
-    await admin
-      .from("app_subscription")
-      .update({ status: "GRACE", updated_at: now.toISOString() })
-      .eq("id", "main");
-    return response({ invoice: updatedInvoice, message: "Pix criado" });
+
+    // O fim da tolerancia controla o bloqueio. Renovar o PIX jamais reabre acesso.
+    if (!isOverdue && subscription.status !== "GRACE") {
+      await admin
+        .from("app_subscription")
+        .update({ status: "GRACE", updated_at: now.toISOString() })
+        .eq("id", "main");
+    }
+
+    return response({
+      invoice: updatedInvoice,
+      message: invoice.mercado_pago_order_id
+        ? "Pix expirado renovado automaticamente"
+        : "Pix criado",
+    });
   } catch (error) {
     return response(
       {
