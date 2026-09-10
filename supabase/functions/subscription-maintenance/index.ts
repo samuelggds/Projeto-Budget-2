@@ -8,7 +8,7 @@ const response = (body: unknown, status = 200) =>
 
 // O prazo do PIX e independente do prazo de tolerancia da assinatura.
 // Enquanto existir uma fatura pendente, um novo PIX sera criado sempre que
-// a cobranca anterior expirar ou for encerrada sem pagamento.
+// a cobranca anterior expirar, for encerrada sem pagamento ou estiver incompleta.
 const PIX_VALIDITY_DAYS = 7;
 const terminalStatuses = new Set([
   "expired",
@@ -26,6 +26,10 @@ function hasExpiredLocally(invoice: Record<string, unknown>, now: Date) {
   if (!invoice.pix_expires_at) return false;
   const expiresAt = new Date(String(invoice.pix_expires_at)).getTime();
   return Number.isFinite(expiresAt) && expiresAt <= now.getTime();
+}
+
+function hasCompletePix(invoice: Record<string, unknown>) {
+  return Boolean(invoice.pix_qr_code && invoice.pix_qr_code_base64);
 }
 
 function isTerminalWithoutPayment(order: Record<string, unknown>) {
@@ -190,9 +194,10 @@ Deno.serve(async (request) => {
 
         const shouldRenew =
           hasExpiredLocally(invoice as Record<string, unknown>, now) ||
-          isTerminalWithoutPayment(order as Record<string, unknown>);
+          isTerminalWithoutPayment(order as Record<string, unknown>) ||
+          !hasCompletePix(invoice as Record<string, unknown>);
 
-        if (!shouldRenew && invoice.pix_qr_code) {
+        if (!shouldRenew) {
           return response({
             invoice,
             message: `Pagamento ainda pendente (${order.status ?? "sem status"} / ${payment?.status_detail ?? payment?.status ?? "sem detalhe"})`,
@@ -203,13 +208,14 @@ Deno.serve(async (request) => {
           order?.message ?? "Não foi possível consultar a cobrança existente",
         );
       }
-      // Order expirada/encerrada ou nao encontrada: gera uma nova abaixo.
+      // Order expirada, encerrada, incompleta ou nao encontrada: gera uma nova abaixo.
     }
 
     const generationSeed = [
       invoice.id,
       invoice.mercado_pago_order_id ?? "initial",
       invoice.pix_expires_at ?? "initial",
+      invoice.pix_qr_code_base64 ? "with-image" : "without-image",
     ].join(":");
     const mercadoPagoResponse = await fetch(
       "https://api.mercadopago.com/v1/orders",
@@ -279,7 +285,7 @@ Deno.serve(async (request) => {
     return response({
       invoice: updatedInvoice,
       message: invoice.mercado_pago_order_id
-        ? "Pix expirado renovado automaticamente"
+        ? "Pix renovado automaticamente"
         : "Pix criado",
     });
   } catch (error) {
