@@ -7,6 +7,11 @@ const money = (value: number) =>
   value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const date = (value?: string) =>
   value ? new Date(value).toLocaleString("pt-BR") : "—";
+const pixIsExpired = (invoice?: SubscriptionInvoice) =>
+  Boolean(
+    invoice?.pixExpiresAt &&
+      new Date(invoice.pixExpiresAt).getTime() <= Date.now(),
+  );
 
 export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   const [subscription, setSubscription] = useState<AppSubscription | null>(
@@ -51,7 +56,10 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
       void supabase.removeChannel(channel);
     };
   }, []);
+
   const pending = invoices.find((invoice) => invoice.status === "PENDING");
+  const pendingPixExpired = pixIsExpired(pending);
+  const payablePending = pending && !pendingPixExpired ? pending : undefined;
   const visibleInvoices = invoices.slice(0, visibleInvoiceCount);
   const hasMoreInvoices = visibleInvoiceCount < invoices.length;
 
@@ -64,8 +72,11 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
       const dueIn =
         new Date(subscription.currentPeriodEndsAt as string).getTime() -
         Date.now();
+      const expiresIn = pending?.pixExpiresAt
+        ? new Date(pending.pixExpiresAt).getTime() - Date.now()
+        : Number.POSITIVE_INFINITY;
       const delay = pending
-        ? 10_000
+        ? Math.min(Math.max(expiresIn, 1_000), 10_000)
         : Math.min(Math.max(dueIn, 1_000), 60 * 60 * 1_000);
       timer = window.setTimeout(async () => {
         try {
@@ -85,8 +96,30 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   }, [
     subscription?.billingEnabled,
     subscription?.currentPeriodEndsAt,
-    pending,
+    pending?.id,
+    pending?.pixExpiresAt,
   ]);
+
+  useEffect(() => {
+    if (!pendingPixExpired || generating) return;
+    let cancelled = false;
+    const renewExpiredPix = async () => {
+      setGenerating(true);
+      setMessage("Renovando PIX expirado...");
+      try {
+        await refreshSubscriptionCharge();
+        if (!cancelled) await refresh();
+      } catch (err) {
+        if (!cancelled) setMessage((err as Error).message);
+      } finally {
+        if (!cancelled) setGenerating(false);
+      }
+    };
+    void renewExpiredPix();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingPixExpired, pending?.id]);
 
   if (loading && !subscription)
     return (
@@ -155,6 +188,12 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               {pending ? money(pending.amount) : "Nenhuma cobrança pendente"}
             </h2>
           </div>
+          {pendingPixExpired && (
+            <p>
+              O PIX anterior expirou. Um novo QR Code está sendo gerado
+              automaticamente.
+            </p>
+          )}
           {!pending && subscription.status === "BLOCKED" && (
             <button
               className="button primary"
@@ -175,29 +214,31 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               {generating ? "Gerando cobrança..." : "Gerar cobrança PIX"}
             </button>
           )}
-          {pending?.pixQrCodeBase64 && (
+          {payablePending?.pixQrCodeBase64 && (
             <img
-              src={`data:image/png;base64,${pending.pixQrCodeBase64}`}
+              src={`data:image/png;base64,${payablePending.pixQrCodeBase64}`}
               alt="QR Code Pix"
             />
           )}
-          {pending?.pixQrCode && (
+          {payablePending?.pixQrCode && (
             <>
-              <textarea readOnly value={pending.pixQrCode} />
+              <textarea readOnly value={payablePending.pixQrCode} />
               <button
                 className="button primary"
                 onClick={() =>
-                  void navigator.clipboard.writeText(pending.pixQrCode ?? "")
+                  void navigator.clipboard.writeText(
+                    payablePending.pixQrCode ?? "",
+                  )
                 }
               >
                 Copiar Pix
               </button>
             </>
           )}
-          {pending?.pixTicketUrl && (
+          {payablePending?.pixTicketUrl && (
             <a
               className="button soft"
-              href={pending.pixTicketUrl}
+              href={payablePending.pixTicketUrl}
               target="_blank"
               rel="noreferrer"
             >
