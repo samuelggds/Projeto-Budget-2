@@ -1,4 +1,5 @@
 -- Corrige a data de ativação ao iniciar um novo ciclo depois de uma desativação.
+-- A tolerância padrão de todos os novos ciclos é de 3 dias úteis.
 
 create or replace function public.activate_app_subscription()
 returns public.app_subscription
@@ -28,7 +29,7 @@ begin
     activated_at = activation_time,
     current_period_started_at = activation_time,
     current_period_ends_at = period_end,
-    grace_period_ends_at = public.add_business_days(period_end, 5),
+    grace_period_ends_at = public.add_business_days(period_end, 3),
     blocked_at = null, deactivated_at = null, updated_at = activation_time
   where id = 'main' returning * into subscription_row;
   return subscription_row;
