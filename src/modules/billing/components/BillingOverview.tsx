@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../auth/services/supabase";
 import { loadBilling, refreshSubscriptionCharge } from "../services/billingApi";
 import type { AppSubscription, SubscriptionInvoice } from "../types/Billing";
@@ -22,6 +22,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
   const [visibleInvoiceCount, setVisibleInvoiceCount] = useState(5);
+  const automaticRenewalRef = useRef(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -34,6 +35,24 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
       setMessage((error as Error).message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generatePix = async (automatic = false) => {
+    if (automatic) {
+      if (automaticRenewalRef.current) return;
+      automaticRenewalRef.current = true;
+    }
+    setGenerating(true);
+    setMessage(automatic ? "Renovando PIX expirado..." : "Gerando novo QR Code...");
+    try {
+      await refreshSubscriptionCharge();
+      await refresh();
+    } catch (err) {
+      setMessage((err as Error).message);
+    } finally {
+      setGenerating(false);
+      if (automatic) automaticRenewalRef.current = false;
     }
   };
 
@@ -58,26 +77,39 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   }, []);
 
   const pending = invoices.find((invoice) => invoice.status === "PENDING");
+  const pendingId = pending?.id;
+  const pendingPixExpiresAt = pending?.pixExpiresAt;
   const pendingPixExpired = pixIsExpired(pending);
-  const payablePending = pending && !pendingPixExpired ? pending : undefined;
+  const pendingPixMissing = Boolean(
+    pending && (!pending.pixQrCode || !pending.pixQrCodeBase64),
+  );
+  const payablePending =
+    pending && !pendingPixExpired && !pendingPixMissing ? pending : undefined;
   const visibleInvoices = invoices.slice(0, visibleInvoiceCount);
   const hasMoreInvoices = visibleInvoiceCount < invoices.length;
+  const shouldOfferManualGeneration = Boolean(
+    subscription.billingEnabled &&
+      subscription.currentPeriodEndsAt &&
+      Date.now() >= new Date(subscription.currentPeriodEndsAt).getTime() &&
+      (!payablePending || pendingPixExpired || pendingPixMissing),
+  );
 
   useEffect(() => {
     if (!subscription?.billingEnabled || !subscription.currentPeriodEndsAt)
       return;
     let cancelled = false;
     let timer = 0;
+    const currentPeriodEndsAt = subscription.currentPeriodEndsAt;
+
     const schedule = () => {
-      const dueIn =
-        new Date(subscription.currentPeriodEndsAt as string).getTime() -
-        Date.now();
-      const expiresIn = pending?.pixExpiresAt
-        ? new Date(pending.pixExpiresAt).getTime() - Date.now()
+      const dueIn = new Date(currentPeriodEndsAt).getTime() - Date.now();
+      const expiresIn = pendingPixExpiresAt
+        ? new Date(pendingPixExpiresAt).getTime() - Date.now()
         : Number.POSITIVE_INFINITY;
-      const delay = pending
+      const delay = pendingId
         ? Math.min(Math.max(expiresIn, 1_000), 10_000)
         : Math.min(Math.max(dueIn, 1_000), 60 * 60 * 1_000);
+
       timer = window.setTimeout(async () => {
         try {
           await refreshSubscriptionCharge();
@@ -88,6 +120,7 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
         if (!cancelled) schedule();
       }, delay);
     };
+
     schedule();
     return () => {
       cancelled = true;
@@ -96,30 +129,14 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
   }, [
     subscription?.billingEnabled,
     subscription?.currentPeriodEndsAt,
-    pending?.id,
-    pending?.pixExpiresAt,
+    pendingId,
+    pendingPixExpiresAt,
   ]);
 
   useEffect(() => {
-    if (!pendingPixExpired || generating) return;
-    let cancelled = false;
-    const renewExpiredPix = async () => {
-      setGenerating(true);
-      setMessage("Renovando PIX expirado...");
-      try {
-        await refreshSubscriptionCharge();
-        if (!cancelled) await refresh();
-      } catch (err) {
-        if (!cancelled) setMessage((err as Error).message);
-      } finally {
-        if (!cancelled) setGenerating(false);
-      }
-    };
-    void renewExpiredPix();
-    return () => {
-      cancelled = true;
-    };
-  }, [pendingPixExpired, pending?.id]);
+    if (!pendingId || (!pendingPixExpired && !pendingPixMissing)) return;
+    void generatePix(true);
+  }, [pendingId, pendingPixExpired, pendingPixMissing]);
 
   if (loading && !subscription)
     return (
@@ -194,25 +211,11 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               automaticamente.
             </p>
           )}
-          {!pending && subscription.status === "BLOCKED" && (
-            <button
-              className="button primary"
-              disabled={generating}
-              onClick={async () => {
-                setGenerating(true);
-                setMessage("");
-                try {
-                  await refreshSubscriptionCharge();
-                  await refresh();
-                } catch (err) {
-                  setMessage((err as Error).message);
-                } finally {
-                  setGenerating(false);
-                }
-              }}
-            >
-              {generating ? "Gerando cobrança..." : "Gerar cobrança PIX"}
-            </button>
+          {pendingPixMissing && !pendingPixExpired && (
+            <p>
+              A cobrança existe, mas o QR Code ainda não está disponível. Você
+              pode tentar gerar novamente pelo botão abaixo.
+            </p>
           )}
           {payablePending?.pixQrCodeBase64 && (
             <img
@@ -245,7 +248,17 @@ export function BillingOverview({ blocked = false }: { blocked?: boolean }) {
               Abrir no Mercado Pago
             </a>
           )}
-          {!pending && (
+          {shouldOfferManualGeneration && (
+            <button
+              className="button primary"
+              type="button"
+              disabled={generating}
+              onClick={() => void generatePix(false)}
+            >
+              {generating ? "Gerando QR Code..." : "Gerar novo QR Code"}
+            </button>
+          )}
+          {!pending && !shouldOfferManualGeneration && (
             <p>
               A cobrança Pix aparecerá aqui automaticamente quando o ciclo
               mensal vencer.
