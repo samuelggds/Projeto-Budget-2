@@ -39,6 +39,9 @@ Execute uma vez no SQL Editor:
 14. `service-unit-migration.sql`
 15. `employee-role-migration.sql`
 16. `technician-responsible-migration.sql`
+17. `three-business-day-grace.sql`
+
+A migration `three-business-day-grace.sql` também deve ser executada em instalações que já estavam em produção antes desta alteração. Ela atualiza as funções do banco para usar 3 dias úteis nos próximos ciclos e alinha o ciclo pendente atual.
 
 Para cadastrar um funcionário, crie a conta em **Authentication > Users**, abra
 `assign-account-roles.sql`, substitua `EMAIL_DA_CONTA_DO_FUNCIONARIO_AQUI` pelo
@@ -69,6 +72,8 @@ npx supabase functions deploy subscription-maintenance
 npx supabase functions deploy mercado-pago-webhook
 ```
 
+Sempre que `supabase/functions/subscription-maintenance/index.ts` for alterado, publique novamente `subscription-maintenance`. É essa Edge Function que consulta o Mercado Pago e renova cobranças Pix expiradas ou incompletas.
+
 ## Webhook Mercado Pago
 
 Na aplicação Mercado Pago, abra Webhooks e cadastre:
@@ -89,7 +94,7 @@ x-cron-secret: o mesmo valor salvo em CRON_SECRET
 
 Agendamento sugerido: `0 12 * * *` (todos os dias às 12:00 UTC, 09:00 no horário de Fortaleza).
 
-O botão Atualizar cobrança também chama a manutenção manualmente pela conta `BILLING_ADMIN`.
+O painel também chama a manutenção periodicamente enquanto existir cobrança pendente. Se o QR Code estiver expirado ou não tiver sido retornado corretamente, a tela tenta renovar automaticamente e também exibe o botão **Gerar novo QR Code** para uma tentativa manual.
 
 ## Preparar para entregar a um novo cliente
 
@@ -106,14 +111,18 @@ reativar a mensalidade quando a instalação estiver pronta para uso.
 
 - Ativar inicia um ciclo de um mês.
 - No vencimento, a rotina cria a cobrança Pix de R$ 250.
-- O sistema permanece disponível por mais cinco dias úteis.
-- Após a tolerância, o banco nega acesso aos dados e o frontend mostra o bloqueio.
-- O webhook confirma o pagamento e inicia o ciclo seguinte.
+- O sistema permanece disponível por mais **3 dias úteis** de tolerância.
+- Após os 3 dias úteis, o banco nega acesso aos dados e o frontend mostra o bloqueio.
+- O bloqueio não encerra a possibilidade de pagamento: a cobrança Pix continua disponível.
+- O QR Code Pix tem validade técnica própria e, quando expira ou fica incompleto, é renovado automaticamente pela rotina de manutenção.
+- Se a renovação automática não aparecer na tela, o cliente pode usar **Gerar novo QR Code**.
+- Renovar o Pix nunca aumenta a tolerância nem desbloqueia o sistema sem pagamento.
+- O webhook confirma o pagamento e inicia o ciclo seguinte, novamente com 3 dias úteis de tolerância após o próximo vencimento.
 - Desativar bloqueia imediatamente, cancela cobranças pendentes e interrompe novos ciclos.
 
 Depois de executar `billing-realtime-migration.sql`, as telas recebem alterações
 da mensalidade pelo Supabase Realtime. Enquanto existir uma fatura pendente, a
-tela também faz uma reconciliação automática a cada 10 segundos como garantia
-caso a notificação do Mercado Pago demore.
+tela também faz uma reconciliação automática periódica como garantia caso a
+notificação do Mercado Pago demore.
 Ao chegar ao vencimento, as telas de mensalidade chamam automaticamente a rotina
-de cobrança e exibem o novo QR Code sem exigir o botão Atualizar cobrança.
+de cobrança e exibem o novo QR Code sem exigir ação manual.
