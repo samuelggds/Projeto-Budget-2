@@ -40,8 +40,11 @@ Execute uma vez no SQL Editor:
 15. `employee-role-migration.sql`
 16. `technician-responsible-migration.sql`
 17. `three-business-day-grace.sql`
+18. `employee-subscription-access-enforcement.sql`
 
 A migration `three-business-day-grace.sql` também deve ser executada em instalações que já estavam em produção antes desta alteração. Ela atualiza as funções do banco para usar 3 dias úteis nos próximos ciclos e alinha o ciclo pendente atual.
+
+A migration `employee-subscription-access-enforcement.sql` fecha o acesso direto do papel `FUNCIONARIO` às tabelas operacionais e aos PDFs quando a mensalidade estiver bloqueada. O bloqueio deixa de depender apenas do frontend e passa a ser aplicado também pelo RLS do banco.
 
 Para cadastrar um funcionário, crie a conta em **Authentication > Users**, abra
 `assign-account-roles.sql`, substitua `EMAIL_DA_CONTA_DO_FUNCIONARIO_AQUI` pelo
@@ -73,6 +76,8 @@ npx supabase functions deploy mercado-pago-webhook
 ```
 
 Sempre que `supabase/functions/subscription-maintenance/index.ts` for alterado, publique novamente `subscription-maintenance`. É essa Edge Function que consulta o Mercado Pago e renova cobranças Pix expiradas ou incompletas.
+
+Sempre que `supabase/functions/mercado-pago-webhook/index.ts` for alterado, publique novamente `mercado-pago-webhook`. Em falhas transitórias, o webhook responde com erro para permitir nova tentativa do provedor; a rotina `subscription-maintenance` continua sendo a camada de reconciliação de segurança.
 
 ## Webhook Mercado Pago
 
@@ -113,6 +118,7 @@ reativar a mensalidade quando a instalação estiver pronta para uso.
 - No vencimento, a rotina cria a cobrança Pix de R$ 250.
 - O sistema permanece disponível por mais **3 dias úteis** de tolerância.
 - Após os 3 dias úteis, o banco nega acesso aos dados e o frontend mostra o bloqueio.
+- O bloqueio vale também para o acesso direto do `FUNCIONARIO` às tabelas operacionais e aos PDFs, desde que `employee-subscription-access-enforcement.sql` tenha sido aplicado.
 - O bloqueio não encerra a possibilidade de pagamento: a cobrança Pix continua disponível.
 - O QR Code Pix tem validade técnica própria e, quando expira ou fica incompleto, é renovado automaticamente pela rotina de manutenção.
 - Se a renovação automática não aparecer na tela, o cliente pode usar **Gerar novo QR Code**.
