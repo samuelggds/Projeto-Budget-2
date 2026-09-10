@@ -38,7 +38,7 @@ begin
   update public.app_subscription set
     status = 'ACTIVE', current_period_started_at = next_period_start,
     current_period_ends_at = next_period_end,
-    grace_period_ends_at = public.add_business_days(next_period_end, 5),
+    grace_period_ends_at = public.add_business_days(next_period_end, 3),
     blocked_at = null, last_payment_at = payment_time, updated_at = payment_time
   where id = 'main' returning * into subscription_row;
   return subscription_row;
