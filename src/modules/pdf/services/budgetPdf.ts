@@ -7,6 +7,9 @@ const A4_WIDTH_POINTS = 595.28;
 const A4_HEIGHT_POINTS = 841.89;
 const CAPTURE_PIXEL_RATIO = 2;
 
+const isTauri = () =>
+  !!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+
 async function waitForDocumentAssets(element: HTMLElement) {
   await document.fonts.ready;
   await Promise.all(
@@ -107,7 +110,17 @@ export async function createBudgetPdf(element: HTMLElement, filename: string) {
   return { blob, download: () => downloadPdfBlob(blob, filename) };
 }
 
-export function downloadPdfBlob(blob: Blob, filename: string) {
+async function savePdfToDesktop(blob: Blob, filename: string) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+  return invoke<string>("save_pdf_to_desktop", { filename, bytes });
+}
+
+export async function downloadPdfBlob(blob: Blob, filename: string) {
+  if (isTauri()) {
+    return savePdfToDesktop(blob, filename);
+  }
+
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -117,4 +130,5 @@ export function downloadPdfBlob(blob: Blob, filename: string) {
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return filename;
 }
