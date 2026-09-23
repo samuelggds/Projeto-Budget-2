@@ -27,7 +27,9 @@ export function AppNotifications() {
       .then((u) => {
         if (u?.available) setUpdate(u);
       })
-      .catch(() => {});
+      .catch((error) => {
+        console.error("[Updater] Falha ao verificar atualizações:", error);
+      });
   }, []);
 
   const handleUpdate = async () => {
@@ -37,7 +39,8 @@ export function AppNotifications() {
       await update.downloadAndInstall();
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
-    } catch {
+    } catch (error) {
+      console.error("[Updater] Falha ao instalar atualização:", error);
       setInstalling(false);
     }
   };
