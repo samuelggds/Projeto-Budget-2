@@ -41,8 +41,9 @@ Execute uma vez no SQL Editor:
 16. `technician-responsible-migration.sql`
 17. `three-business-day-grace.sql`
 18. `employee-subscription-access-enforcement.sql`
+19. `one-business-day-grace.sql`
 
-A migration `three-business-day-grace.sql` também deve ser executada em instalações que já estavam em produção antes desta alteração. Ela atualiza as funções do banco para usar 3 dias úteis nos próximos ciclos e alinha o ciclo pendente atual.
+A migration `three-business-day-grace.sql` estabelece a tolerância histórica de 3 dias úteis. Depois dela, execute `one-business-day-grace.sql` **também nas instalações já em produção**. A nova migration fixa a tolerância em **1 dia útil** nos ciclos atuais e futuros e alinha faturas pendentes, sem mudar o valor da mensalidade, o fluxo Mercado Pago/Pix, os webhooks ou as regras de bloqueio.
 
 A migration `employee-subscription-access-enforcement.sql` fecha o acesso direto do papel `FUNCIONARIO` às tabelas operacionais e aos PDFs quando a mensalidade estiver bloqueada. O bloqueio deixa de depender apenas do frontend e passa a ser aplicado também pelo RLS do banco.
 
@@ -116,14 +117,14 @@ reativar a mensalidade quando a instalação estiver pronta para uso.
 
 - Ativar inicia um ciclo de um mês.
 - No vencimento, a rotina cria a cobrança Pix de R$ 250.
-- O sistema permanece disponível por mais **3 dias úteis** de tolerância.
-- Após os 3 dias úteis, o banco nega acesso aos dados e o frontend mostra o bloqueio.
+- O sistema permanece disponível por mais **1 dia útil** de tolerância.
+- Após 1 dia útil, o banco nega acesso aos dados e o frontend mostra o bloqueio.
 - O bloqueio vale também para o acesso direto do `FUNCIONARIO` às tabelas operacionais e aos PDFs, desde que `employee-subscription-access-enforcement.sql` tenha sido aplicado.
 - O bloqueio não encerra a possibilidade de pagamento: a cobrança Pix continua disponível.
 - O QR Code Pix tem validade técnica própria e, quando expira ou fica incompleto, é renovado automaticamente pela rotina de manutenção.
 - Se a renovação automática não aparecer na tela, o cliente pode usar **Gerar novo QR Code**.
 - Renovar o Pix nunca aumenta a tolerância nem desbloqueia o sistema sem pagamento.
-- O webhook confirma o pagamento e inicia o ciclo seguinte, novamente com 3 dias úteis de tolerância após o próximo vencimento.
+- O webhook confirma o pagamento e inicia o ciclo seguinte, novamente com 1 dia útil de tolerância após o próximo vencimento.
 - Desativar bloqueia imediatamente, cancela cobranças pendentes e interrompe novos ciclos.
 
 Depois de executar `billing-realtime-migration.sql`, as telas recebem alterações
