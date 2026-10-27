@@ -25,7 +25,7 @@
     "react": "latest",
     "react-dom": "latest",
     "typescript": "latest",
-    "vite": "latest"
+    "vite": "8.2.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
