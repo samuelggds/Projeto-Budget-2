@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::io::Write;
 use tauri::Manager;
 
 fn unique_pdf_path(desktop: &Path, filename: &str) -> PathBuf {
@@ -9,15 +10,7 @@ fn unique_pdf_path(desktop: &Path, filename: &str) -> PathBuf {
     .filter(|value| !value.trim().is_empty())
     .unwrap_or("documento");
 
-  let mut candidate = desktop.join(format!("{stem}.pdf"));
-  let mut suffix = 1;
-
-  while candidate.exists() {
-    candidate = desktop.join(format!("{stem} ({suffix}).pdf"));
-    suffix += 1;
-  }
-
-  candidate
+  desktop.join(format!("{stem}.pdf"))
 }
 
 #[tauri::command]
@@ -26,8 +19,8 @@ fn save_pdf_to_desktop(
   filename: String,
   bytes: Vec<u8>,
 ) -> Result<String, String> {
-  if bytes.is_empty() {
-    return Err("O PDF está vazio".into());
+  if bytes.is_empty() || bytes.len() > 30 * 1024 * 1024 || !bytes.starts_with(b"%PDF-") {
+    return Err("PDF inválido ou maior que 30 MB".into());
   }
 
   let safe_filename = Path::new(&filename)
@@ -44,11 +37,29 @@ fn save_pdf_to_desktop(
     .desktop_dir()
     .map_err(|error| format!("Não foi possível localizar a Área de Trabalho: {error}"))?;
 
-  let destination = unique_pdf_path(&desktop, safe_filename);
-  std::fs::write(&destination, bytes)
-    .map_err(|error| format!("Não foi possível salvar o PDF: {error}"))?;
-
-  Ok(destination.to_string_lossy().into_owned())
+  // create_new impede sobrescrita inclusive quando dois downloads ocorrem juntos.
+  let original = unique_pdf_path(&desktop, safe_filename);
+  let stem = original.file_stem().and_then(|v| v.to_str()).unwrap_or("documento");
+  for suffix in 0..10_000 {
+    let destination = if suffix == 0 {
+      original.clone()
+    } else {
+      desktop.join(format!("{stem} ({suffix}).pdf"))
+    };
+    match std::fs::OpenOptions::new().write(true).create_new(true).open(&destination) {
+      Ok(mut file) => {
+        if let Err(error) = file.write_all(&bytes) {
+          drop(file);
+          let _ = std::fs::remove_file(&destination);
+          return Err(format!("Não foi possível salvar o PDF: {error}"));
+        }
+        return Ok(destination.to_string_lossy().into_owned());
+      }
+      Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+      Err(error) => return Err(format!("Não foi possível salvar o PDF: {error}")),
+    }
+  }
+  Err("Não foi possível encontrar um nome livre para o PDF".into())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

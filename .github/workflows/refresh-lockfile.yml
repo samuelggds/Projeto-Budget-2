@@ -1,0 +1,15 @@
+# Temporary recovery workflow retired after synchronizing package-lock.json.
+# Intentionally has no automatic triggers or jobs.
+name: Lockfile refresh (retired)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  archived:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Lockfile repair completed; this workflow is retired."
