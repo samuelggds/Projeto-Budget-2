@@ -1,0 +1,166 @@
+name: Auto Release Windows
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: budget-windows-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout audited commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Test release version selection
+        run: node --test scripts/release-version.check.mjs
+
+      - name: Verify main SHA and choose next version
+        id: version
+        env:
+          CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/prepare-auto-release.mjs
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout audited commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Ensure main has not changed
+        shell: pwsh
+        env:
+          CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = ((git ls-remote origin refs/heads/main) -split '\s+')[0]
+          if ($head -ne $env:CI_HEAD_SHA) {
+            throw 'A newer main commit exists. The next successful CI run will release it.'
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Prepare application release version
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: node scripts/apply-release-version.mjs
+
+      - name: Validate required release configuration
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          foreach ($name in @('TAURI_SIGNING_PRIVATE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing required release configuration: $name"
+            }
+          }
+
+      - name: Install frontend dependencies reproducibly
+        run: npm ci
+
+      - name: Revalidate security and application on Windows
+        shell: pwsh
+        run: |
+          node scripts/security-check.mjs
+          npm run lint
+          npm run type-check
+          npm run test:coverage
+          npm audit --audit-level=moderate
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Build and sign updater artifacts (draft)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "Versão __VERSION__"
+          releaseBody: "Atualização assinada após CI aprovado. Migrações Supabase não são aplicadas automaticamente."
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          tauriScript: npx tauri
+
+      - name: Validate signed assets and publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = gh release view $env:RELEASE_TAG --json isDraft,assets | ConvertFrom-Json
+          if (-not $release.isDraft) { throw 'Expected a draft release before publication' }
+          $names = @($release.assets | ForEach-Object { $_.name })
+          if ($names -notcontains 'latest.json') { throw 'Updater latest.json is missing' }
+          $installers = @($names | Where-Object { $_ -match '_x64-setup\.exe$' })
+          if ($installers.Count -ne 1) { throw 'Expected one Windows x64 installer' }
+          if ($names -notcontains "$($installers[0]).sig") { throw 'Signed installer signature is missing' }
+
+          $downloadDir = Join-Path $env:RUNNER_TEMP 'budget-updater-verify'
+          New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+          gh release download $env:RELEASE_TAG --pattern latest.json --dir $downloadDir
+          $manifest = Get-Content (Join-Path $downloadDir 'latest.json') -Raw | ConvertFrom-Json
+          if ($manifest.version -ne $env:RELEASE_VERSION) { throw 'Updater version mismatch' }
+          $windows = @($manifest.platforms.PSObject.Properties | Where-Object { $_.Name -like 'windows-*' })
+          if ($windows.Count -eq 0) { throw 'Windows platform missing in manifest' }
+          $prefix = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/"
+          foreach ($platform in $windows) {
+            if ([string]::IsNullOrWhiteSpace($platform.Value.signature)) { throw 'Missing updater signature' }
+            if (-not $platform.Value.url.StartsWith($prefix)) { throw 'Unexpected updater download URL' }
+          }
+
+          $currentMain = ((git ls-remote origin refs/heads/main) -split '\s+')[0]
+          if ($currentMain -ne $env:CI_HEAD_SHA) {
+            Write-Warning 'Main advanced during build; leaving release as draft.'
+            exit 0
+          }
+          gh release edit $env:RELEASE_TAG --draft=false
+          Write-Host "Published signed release $env:RELEASE_TAG"
