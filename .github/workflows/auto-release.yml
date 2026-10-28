@@ -33,7 +33,7 @@ jobs:
           node-version: "24"
 
       - name: Test release version selection
-        run: node --test scripts/release-version.test.mjs
+        run: node --test scripts/release-version.check.mjs
 
       - name: Verify main SHA and choose next version
         id: version
