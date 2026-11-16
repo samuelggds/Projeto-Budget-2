@@ -185,7 +185,9 @@ export function ReceiptsTab() {
     const generate = async () => {
       setDownloading(true);
       try {
-        await new Promise<void>((resolve) => requestAnimationFrame(resolve));
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        });
         if (!historyPaperRef.current) throw new Error("Modelo de recibo não encontrado");
         const pdf = await createBudgetPdf(historyPaperRef.current, `recibo-${historyPdf.number}.pdf`);
         await pdf.download();
