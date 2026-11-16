@@ -1,10 +1,13 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { Ref } from "react";
 import type { Receipt } from "../types/Receipt";
+import { loadReceipts, nextReceiptNumber } from "../services/receiptStorage";
 import {
-  loadReceipts,
-  nextReceiptNumber,
-  saveReceipts,
-} from "../services/receiptStorage";
+  deleteReceiptFromDatabase,
+  importLocalReceipt,
+  listReceipts,
+  saveReceiptToDatabase,
+} from "../services/receiptApi";
 import { createBudgetPdf } from "../../pdf/services/budgetPdf";
 
 function formatMoney(value: number) {
@@ -30,11 +33,164 @@ function emptyDraft(receipts: Receipt[]): Receipt {
   };
 }
 
+function ReceiptPaper({ receipt: draft, paperRef }: { receipt: Receipt; paperRef?: Ref<HTMLDivElement> }) {
+  const formattedDate = (() => {
+    if (!draft.date) return "";
+    const [y, m, d] = draft.date.split("-");
+    return `${d}/${m}/${y}`;
+  })();
+  return (
+          <div ref={paperRef} className="receipt-paper">
+            <div className="receipt-a4-inner">
+              <div className="receipt-box">
+                {/* Header */}
+                <div className="receipt-header">
+                  <h1 className="receipt-title">RECIBO</h1>
+                  <div className="receipt-header-right">
+                    <div className="receipt-number-box">
+                      <span>Nº:</span>
+                      <strong>{draft.number}</strong>
+                    </div>
+                    <div className="receipt-value-box">
+                      <span>VALOR:</span>
+                      <strong>{formatMoney(draft.amount)}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="receipt-body">
+                  <div className="receipt-field-row">
+                    <span className="receipt-label">Recebi(emos) de</span>
+                    <span className="receipt-line">{draft.receivedFrom}</span>
+                  </div>
+                  <div className="receipt-field-row">
+                    <span className="receipt-label">a importância de</span>
+                    <span className="receipt-line">
+                      {draft.amountDescription}
+                    </span>
+                  </div>
+                  <div className="receipt-field-row">
+                    <span className="receipt-label">referente a</span>
+                    <span className="receipt-line">{draft.referringTo}</span>
+                  </div>
+
+                  <p className="receipt-clause">
+                    e para clareza firmo(amos) o presente
+                  </p>
+
+                  <div className="receipt-location-row">
+                    <span className="receipt-line receipt-city">
+                      {draft.city || "\u00a0"}
+                    </span>
+                    <span className="receipt-comma">,</span>
+                    <span className="receipt-line receipt-date">
+                      {formattedDate || "\u00a0"}
+                    </span>
+                  </div>
+
+                  <div className="receipt-signature-area">
+                    <div className="receipt-sig-line" />
+                    <p className="receipt-field-pair">
+                      <span>
+                        <span className="receipt-label">Assinatura:</span>
+                        <span className="receipt-sig-underline" />
+                      </span>
+                    </p>
+                    <p className="receipt-field-pair receipt-name-doc">
+                      <span>
+                        <span className="receipt-label">Nome:</span>
+                        <span className="receipt-sig-underline receipt-name-line">
+                          {draft.signerName}
+                        </span>
+                      </span>
+                      <span>
+                        <span className="receipt-label">CPF/CNPJ:</span>
+                        <span className="receipt-sig-underline">
+                          {draft.signerDocument}
+                        </span>
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+  );
+}
+
 export function ReceiptsTab() {
-  const [receipts, setReceipts] = useState<Receipt[]>(() => loadReceipts());
-  const [draft, setDraft] = useState<Receipt>(() => emptyDraft(loadReceipts()));
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [draft, setDraft] = useState<Receipt>(() => emptyDraft([]));
   const [preview, setPreview] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [historyPdf, setHistoryPdf] = useState<Receipt | null>(null);
+  const historyPaperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadAndMigrate = async () => {
+      try {
+        const existing = await listReceipts();
+        const local = loadReceipts();
+        const presentIds = new Set(existing.map((r) => r.id));
+        let imported = 0;
+        let failed = 0;
+        for (const receipt of local) {
+          if (receipt.id && presentIds.has(receipt.id)) continue;
+          try {
+            const saved = await importLocalReceipt(receipt);
+            presentIds.add(saved.id);
+            imported++;
+          } catch (reason) {
+            // Keep every original in localStorage for future retry.
+            failed++;
+            console.error("[Recibos] Falha ao importar recibo antigo", reason);
+          }
+        }
+        const result = imported ? await listReceipts() : existing;
+        if (!active) return;
+        setReceipts(result);
+        setDraft(emptyDraft(result));
+        if (imported) setNotice(`${imported} recibo(s) antigo(s) recuperado(s) e salvo(s) no histórico.`);
+        if (failed) setError(`${failed} recibo(s) local(is) não foram importado(s). Eles continuam preservados neste dispositivo. Reabra a aba para tentar novamente.`);
+      } catch (reason) {
+        if (active) setError(`Não foi possível carregar o histórico: ${(reason as Error).message}. Verifique se receipts-migration.sql foi executada no Supabase.`);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void loadAndMigrate();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!historyPdf) return;
+    let active = true;
+    const generate = async () => {
+      setDownloading(true);
+      try {
+        await new Promise<void>((resolve) => requestAnimationFrame(resolve));
+        if (!historyPaperRef.current) throw new Error("Modelo de recibo não encontrado");
+        const pdf = await createBudgetPdf(historyPaperRef.current, `recibo-${historyPdf.number}.pdf`);
+        await pdf.download();
+        if (active) setNotice("PDF baixado com sucesso.");
+      } catch (reason) {
+        if (active) setError(`Não foi possível baixar o PDF: ${(reason as Error).message}`);
+      } finally {
+        if (active) {
+          setDownloading(false);
+          setHistoryPdf(null);
+        }
+      }
+    };
+    void generate();
+    return () => { active = false; };
+  }, [historyPdf]);
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(5);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -42,53 +198,84 @@ export function ReceiptsTab() {
   const update = (field: keyof Receipt, value: string | number) =>
     setDraft((d) => ({ ...d, [field]: value }));
 
-  const saveReceipt = () => {
-    const now = new Date().toISOString();
-    const updated = draft.id
-      ? receipts.map((r) =>
-          r.id === draft.id ? { ...draft, createdAt: r.createdAt } : r,
-        )
-      : [...receipts, { ...draft, id: crypto.randomUUID(), createdAt: now }];
-    setReceipts(updated);
-    saveReceipts(updated);
-    setDraft(emptyDraft(updated));
-    setPreview(false);
+  const saveReceipt = async () => {
+    if (busy) return;
+    if (!Number.isFinite(draft.amount) || draft.amount <= 0 || !draft.receivedFrom.trim() || !draft.date) {
+      setError("Informe valor, nome de quem pagou e data.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const persisted = await saveReceiptToDatabase(draft);
+      const updated = await listReceipts();
+      setReceipts(updated);
+      setDraft(emptyDraft(updated));
+      setPreview(false);
+      setNotice(`Recibo Nº ${persisted.number} salvo no histórico.`);
+    } catch (reason) {
+      setError(`Não foi possível salvar o recibo: ${(reason as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const deleteReceipt = (id: string) => {
-    const updated = receipts.filter((r) => r.id !== id);
-    setReceipts(updated);
-    saveReceipts(updated);
+  const deleteReceipt = async (id: string) => {
+    if (busy || !window.confirm("Excluir este recibo do histórico?")) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await deleteReceiptFromDatabase(id);
+      const updated = await listReceipts();
+      setReceipts(updated);
+      if (draft.id === id) {
+        setDraft(emptyDraft(updated));
+        setPreview(false);
+      }
+      setNotice("Recibo excluído.");
+    } catch (reason) {
+      setError(`Não foi possível excluir o recibo: ${(reason as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const editReceipt = (r: Receipt) => {
-    setDraft(r);
+  const editReceipt = (receipt: Receipt) => {
+    setDraft(receipt);
     setPreview(false);
+    setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const downloadPdf = async () => {
-    if (!paperRef.current) return;
+    if (!paperRef.current || downloading) return;
     setDownloading(true);
+    setError("");
     try {
-      const pdf = await createBudgetPdf(
-        paperRef.current,
-        `recibo-${draft.number}.pdf`,
-      );
-      pdf.download();
+      const pdf = await createBudgetPdf(paperRef.current, `recibo-${draft.number}.pdf`);
+      await pdf.download();
+      setNotice("PDF baixado com sucesso.");
+    } catch (reason) {
+      setError(`Não foi possível baixar o PDF: ${(reason as Error).message}`);
     } finally {
       setDownloading(false);
     }
   };
 
-  const formattedDate = (() => {
-    if (!draft.date) return "";
-    const [y, m, d] = draft.date.split("-");
-    return `${d}/${m}/${y}`;
-  })();
+  if (loading) return <div className="card registry-empty">Carregando histórico e recuperando recibos antigos...</div>;
+  if (error.startsWith("Não foi possível carregar o histórico:")) {
+    return <div className="card registry-empty" role="alert">
+      <p>{error}</p>
+      <button className="button primary" onClick={() => window.location.reload()}>Tentar novamente</button>
+    </div>;
+  }
 
   return (
     <div className="registry-layout">
+      {error && <p className="registry-empty" role="alert" style={{ color: "#b91c1c" }}>{error}</p>}
+      {notice && <p className="registry-empty" role="status">{notice}</p>}
       {/* ── FORM ─────────────────────────────────── */}
       {!preview && (
         <div className={`card registry-form ${draft.id ? "is-editing" : ""}`}>
@@ -183,9 +370,9 @@ export function ReceiptsTab() {
             </button>
             <button
               className="button ghost registry-save"
-              onClick={saveReceipt}
+              onClick={() => void saveReceipt()}
             >
-              💾 Salvar sem visualizar
+              {busy ? "Salvando..." : "💾 Salvar sem visualizar"}
             </button>
             {draft.id && (
               <button
@@ -210,96 +397,20 @@ export function ReceiptsTab() {
               ← Voltar ao formulário
             </button>
             <div className="receipt-preview-actions">
-              <button className="button ghost" onClick={saveReceipt}>
-                💾 Salvar recibo
+              <button className="button ghost" onClick={() => void saveReceipt()}>
+                {busy ? "Salvando..." : "💾 Salvar recibo"}
               </button>
               <button
                 className="button primary"
-                onClick={downloadPdf}
-                disabled={downloading}
+                onClick={() => void downloadPdf()}
+                disabled={downloading || busy}
               >
                 {downloading ? "Gerando..." : "↧ Baixar PDF (A4)"}
               </button>
             </div>
           </div>
 
-          {/* Receipt paper — sized to A4 for PDF capture */}
-          <div ref={paperRef} className="receipt-paper">
-            <div className="receipt-a4-inner">
-              <div className="receipt-box">
-                {/* Header */}
-                <div className="receipt-header">
-                  <h1 className="receipt-title">RECIBO</h1>
-                  <div className="receipt-header-right">
-                    <div className="receipt-number-box">
-                      <span>Nº:</span>
-                      <strong>{draft.number}</strong>
-                    </div>
-                    <div className="receipt-value-box">
-                      <span>VALOR:</span>
-                      <strong>{formatMoney(draft.amount)}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Body */}
-                <div className="receipt-body">
-                  <div className="receipt-field-row">
-                    <span className="receipt-label">Recebi(emos) de</span>
-                    <span className="receipt-line">{draft.receivedFrom}</span>
-                  </div>
-                  <div className="receipt-field-row">
-                    <span className="receipt-label">a importância de</span>
-                    <span className="receipt-line">
-                      {draft.amountDescription}
-                    </span>
-                  </div>
-                  <div className="receipt-field-row">
-                    <span className="receipt-label">referente a</span>
-                    <span className="receipt-line">{draft.referringTo}</span>
-                  </div>
-
-                  <p className="receipt-clause">
-                    e para clareza firmo(amos) o presente
-                  </p>
-
-                  <div className="receipt-location-row">
-                    <span className="receipt-line receipt-city">
-                      {draft.city || "\u00a0"}
-                    </span>
-                    <span className="receipt-comma">,</span>
-                    <span className="receipt-line receipt-date">
-                      {formattedDate || "\u00a0"}
-                    </span>
-                  </div>
-
-                  <div className="receipt-signature-area">
-                    <div className="receipt-sig-line" />
-                    <p className="receipt-field-pair">
-                      <span>
-                        <span className="receipt-label">Assinatura:</span>
-                        <span className="receipt-sig-underline" />
-                      </span>
-                    </p>
-                    <p className="receipt-field-pair receipt-name-doc">
-                      <span>
-                        <span className="receipt-label">Nome:</span>
-                        <span className="receipt-sig-underline receipt-name-line">
-                          {draft.signerName}
-                        </span>
-                      </span>
-                      <span>
-                        <span className="receipt-label">CPF/CNPJ:</span>
-                        <span className="receipt-sig-underline">
-                          {draft.signerDocument}
-                        </span>
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ReceiptPaper receipt={draft} paperRef={paperRef} />
         </div>
       )}
 
@@ -349,10 +460,11 @@ export function ReceiptsTab() {
                     </small>
                   </div>
                   <div className="receipt-list-actions">
-                    <button onClick={() => editReceipt(r)}>Editar</button>
+                    <button disabled={busy || downloading} onClick={() => editReceipt(r)}>Editar</button>
+                    <button disabled={busy || downloading} onClick={() => { setError(""); setNotice(""); setHistoryPdf(r); }}>Baixar PDF</button>
                     <button
                       className="delete-service"
-                      onClick={() => deleteReceipt(r.id)}
+                      onClick={() => void deleteReceipt(r.id)}
                     >
                       Excluir
                     </button>
@@ -387,6 +499,11 @@ export function ReceiptsTab() {
           );
         })()}
       </div>
+      {historyPdf && (
+        <div style={{ position: "fixed", left: "-12000px", top: 0, width: "210mm", pointerEvents: "none" }} aria-hidden="true">
+          <ReceiptPaper receipt={historyPdf} paperRef={historyPaperRef} />
+        </div>
+      )}
     </div>
   );
 }
