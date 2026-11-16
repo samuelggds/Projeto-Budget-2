@@ -97,6 +97,9 @@ export async function importLocalReceipt(receipt: Receipt): Promise<Receipt> {
       receipt_number: Number.isSafeInteger(desiredNumber) && desiredNumber > 0
         ? desiredNumber
         : null,
+      ...(receipt.createdAt && Number.isFinite(Date.parse(receipt.createdAt))
+        ? { created_at: receipt.createdAt }
+        : {}),
     })
     .select()
     .single();
