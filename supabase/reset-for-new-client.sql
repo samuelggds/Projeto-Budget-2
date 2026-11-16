@@ -6,12 +6,13 @@
 -- PRESERVA: usuários de auth.users, funções ADMIN/BILLING_ADMIN, estrutura do
 -- banco, políticas, Edge Functions, secrets, webhook e cron.
 -- APAGA: orçamentos, clientes, serviços, peças, fornecedores, funcionários,
---        histórico de pagamentos, planos de manutenção, faturas e dados da marca.
+--        histórico de pagamentos, recibos, planos de manutenção, faturas e dados da marca.
 -- Faça um backup antes. A exclusão não pode ser desfeita.
 
 begin;
 
 -- Ordem respeita chaves estrangeiras.
+delete from public.receipts; -- requer receipts-migration.sql aplicado
 delete from public.budget_items;
 delete from public.budgets;
 delete from public.clients;
@@ -91,6 +92,7 @@ order by role;
 
 select
   (select count(*) from public.budgets)           as orcamentos,
+  (select count(*) from public.receipts)          as recibos,
   (select count(*) from public.clients)           as clientes,
   (select count(*) from public.services)          as servicos,
   (select count(*) from public.parts)             as pecas,
