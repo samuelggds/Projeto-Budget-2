@@ -113,6 +113,28 @@ da empresa, nome do sistema, segmento, CNPJ/CPF, telefone, e-mail e endereço.
 Esses dados serão usados na interface e nos PDFs. A conta `BILLING_ADMIN` deve
 reativar a mensalidade quando a instalação estiver pronta para uso.
 
+## Recibos persistentes e recuperacao do historico
+
+A aba **Recibos** salva novos recibos no banco Supabase, lista o historico por conta
+e permite editar, excluir e baixar novamente o recibo em PDF A4.
+
+**Instalacoes existentes:** execute `supabase/receipts-migration.sql` no SQL
+Editor (uma vez) antes de publicar a versao atualizada da aplicacao.
+A migration cria a tabela `public.receipts`, com RLS por papel, autoria e
+assinatura ativa, e numeracao atomica no banco.
+
+**Migracao do historico local:** ao abrir a aba Recibos pela primeira vez em cada
+dispositivo, o aplicativo procura os registros antigos de `localStorage["mg-recibos"]`
+e importa os que ainda nao constam no banco. Preserva os dados, numero quando
+disponivel e a data original de criacao. Numeros ja usados recebem um novo
+numero sequencial; nenhuma copia local e apagada. Recibos importados sao marcados
+por ID para nao reaparecerem no banco apos exclusao. Importacoes que falharem
+continuam no dispositivo e sao tentadas novamente em uma proxima abertura.
+
+**Importante:** o armazenamento local so pode ser acessado no proprio
+navegador/perfil/instalacao onde o recibo foi criado. Abra a aplicacao atualizada
+nesse mesmo ambiente para recuperar os dados. Nao limpe o cache antes disso.
+
 ## Regra da mensalidade
 
 - Ativar inicia um ciclo de um mês.
