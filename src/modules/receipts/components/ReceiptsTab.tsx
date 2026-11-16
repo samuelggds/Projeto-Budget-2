@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 import type { Receipt } from "../types/Receipt";
-import { loadReceipts, nextReceiptNumber } from "../services/receiptStorage";
+import {
+  loadReceipts,
+  markReceiptMigrated,
+  migratedReceiptIds,
+  nextReceiptNumber,
+} from "../services/receiptStorage";
 import {
   deleteReceiptFromDatabase,
   importLocalReceipt,
@@ -138,13 +143,19 @@ export function ReceiptsTab() {
         const existing = await listReceipts();
         const local = loadReceipts();
         const presentIds = new Set(existing.map((r) => r.id));
+        const migrated = migratedReceiptIds();
         let imported = 0;
         let failed = 0;
         for (const receipt of local) {
-          if (receipt.id && presentIds.has(receipt.id)) continue;
+          if (!receipt.id || migrated.has(receipt.id)) continue;
+          if (presentIds.has(receipt.id)) {
+            markReceiptMigrated(receipt.id);
+            continue;
+          }
           try {
             const saved = await importLocalReceipt(receipt);
             presentIds.add(saved.id);
+            markReceiptMigrated(receipt.id);
             imported++;
           } catch (reason) {
             // Keep every original in localStorage for future retry.
@@ -228,6 +239,8 @@ export function ReceiptsTab() {
     setNotice("");
     try {
       await deleteReceiptFromDatabase(id);
+      // Do not resurrect a deleted receipt from its preserved legacy backup.
+      markReceiptMigrated(id);
       const updated = await listReceipts();
       setReceipts(updated);
       if (draft.id === id) {
@@ -371,6 +384,7 @@ export function ReceiptsTab() {
             <button
               className="button ghost registry-save"
               onClick={() => void saveReceipt()}
+              disabled={busy || downloading}
             >
               {busy ? "Salvando..." : "💾 Salvar sem visualizar"}
             </button>
@@ -397,7 +411,7 @@ export function ReceiptsTab() {
               ← Voltar ao formulário
             </button>
             <div className="receipt-preview-actions">
-              <button className="button ghost" onClick={() => void saveReceipt()}>
+              <button className="button ghost" disabled={busy || downloading} onClick={() => void saveReceipt()}>
                 {busy ? "Salvando..." : "💾 Salvar recibo"}
               </button>
               <button
@@ -433,7 +447,6 @@ export function ReceiptsTab() {
         {(() => {
           const filtered = receipts
             .slice()
-            .reverse()
             .filter(
               (r) =>
                 !search.trim() ||
@@ -463,6 +476,7 @@ export function ReceiptsTab() {
                     <button disabled={busy || downloading} onClick={() => editReceipt(r)}>Editar</button>
                     <button disabled={busy || downloading} onClick={() => { setError(""); setNotice(""); setHistoryPdf(r); }}>Baixar PDF</button>
                     <button
+                      disabled={busy || downloading}
                       className="delete-service"
                       onClick={() => void deleteReceipt(r.id)}
                     >
